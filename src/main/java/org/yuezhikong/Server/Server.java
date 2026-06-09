@@ -17,15 +17,21 @@
 package org.yuezhikong.Server;
 
 import org.yuezhikong.Server.network.NetworkServer;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class Server {
     private final NetworkServer networkServer = new NetworkServer();
 
+    // 1. 创建一个供网络层异步初始化使用的线程池
+    private final ExecutorService startUpThreadPool = Executors.newSingleThreadExecutor();
+
     public void start(int port) {
-        networkServer.start(port);
+        networkServer.start(startUpThreadPool, port);
     }
 
     public void stop() {
         networkServer.stop();
+        startUpThreadPool.shutdown();
     }
 }
