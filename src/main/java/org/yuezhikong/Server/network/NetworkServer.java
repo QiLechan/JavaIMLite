@@ -17,6 +17,7 @@
 
 package org.yuezhikong.Server.network;
 
+import com.google.gson.Gson;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -49,6 +50,7 @@ import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
 import java.util.Base64;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -68,7 +70,6 @@ public class NetworkServer {
     private PrivateKey ServerSSLPrivateKey;
     private X509Certificate ServerSSLCertificate;
     private Channel serverChannel;
-    private boolean isRunning = false;
 
     private CertificateInfo setCertificateInfo(CertificateInfo info) {
         Certificate cert = new Certificate();
@@ -215,7 +216,8 @@ public class NetworkServer {
     }
 
     private class ServerHandler extends ChannelInboundHandlerAdapter {
-
+        //private final HashMap<Channel, NetworkClient> clientNetworkClientPair = new HashMap<>();
+        private final Gson gson = new Gson();
     }
 
     public void stop() {
