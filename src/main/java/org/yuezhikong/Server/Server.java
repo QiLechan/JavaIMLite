@@ -19,7 +19,9 @@ package org.yuezhikong.Server;
 
 import lombok.Getter;
 import org.apache.ibatis.session.SqlSession;
+import org.yuezhikong.Server.user.User;
 
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -42,4 +44,7 @@ public class Server {
     }
 
 
+    public List<User> getUsers() {
+        return List.of();
+    }
 }
