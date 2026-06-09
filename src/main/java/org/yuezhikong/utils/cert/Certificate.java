@@ -40,7 +40,7 @@ public class Certificate {
      */
     public static final String CERTIFICATE_TYPE = "CERTIFICATE";
 
-    public class SubjectBuilder {
+    public static class SubjectBuilder {
         /**
          * 证书通用名称（Common Name）
          */

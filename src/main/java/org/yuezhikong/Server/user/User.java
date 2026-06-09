@@ -1,8 +1,5 @@
 package org.yuezhikong.Server.user;
 
-import org.jetbrains.annotations.Nullable;
-import org.yuezhikong.Server.userData.auth.IUserAuthentication;
-
 public interface User {
 
     /**

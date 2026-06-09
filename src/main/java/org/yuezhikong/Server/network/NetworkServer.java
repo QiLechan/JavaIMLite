@@ -72,9 +72,8 @@ public class NetworkServer {
     private Channel serverChannel;
 
     private CertificateInfo setCertificateInfo(CertificateInfo info) {
-        Certificate cert = new Certificate();
         long currentTimeMillis = System.currentTimeMillis();
-        Certificate.SubjectBuilder builder = cert.new SubjectBuilder();
+        Certificate.SubjectBuilder builder = new Certificate.SubjectBuilder();
         X500Name subject = builder
                 .setCn(SystemConfig.getServerName())
                 .setL("Shanghai")
