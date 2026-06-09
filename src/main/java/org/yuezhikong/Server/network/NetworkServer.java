@@ -22,8 +22,15 @@ import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.codec.LineBasedFrameDecoder;
+import io.netty.handler.codec.MessageToMessageEncoder;
+import io.netty.handler.codec.string.StringDecoder;
+import io.netty.handler.codec.string.StringEncoder;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
+import io.netty.handler.ssl.ClientAuth;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.SslProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.bouncycastle.asn1.x500.X500Name;
@@ -36,12 +43,13 @@ import javax.net.ssl.SSLException;
 import java.io.File;
 import java.io.IOException;
 import java.math.BigInteger;
+import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
-import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
 import java.util.Base64;
 import java.util.Date;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -56,9 +64,11 @@ public class NetworkServer {
      */
     private EventLoopGroup parentGroup, workerGroup;
     private DefaultEventLoopGroup RecvMessageThreadPool;
-
+    private ChannelFuture future;
     private PrivateKey ServerSSLPrivateKey;
     private X509Certificate ServerSSLCertificate;
+    private Channel serverChannel;
+    private boolean isRunning = false;
 
     private CertificateInfo setCertificateInfo(CertificateInfo info) {
         Certificate cert = new Certificate();
@@ -145,10 +155,10 @@ public class NetworkServer {
 
         Future<?> NettyThreadPoolTask = ThreadPool.submit(() -> {
             log.info("正在创建线程池");
-            EventLoopGroup bossGroup = new NioEventLoopGroup(2);
+            EventLoopGroup parentGroup = new NioEventLoopGroup(2);
             EventLoopGroup workerGroup = new NioEventLoopGroup(10);
             DefaultEventLoopGroup RecvMessageThreadPool = new DefaultEventLoopGroup(10);
-            return new NettyThreadPoolTaskReturn(bossGroup, workerGroup, RecvMessageThreadPool);
+            return new NettyThreadPoolTaskReturn(parentGroup, workerGroup, RecvMessageThreadPool);
         });
 
         try {
@@ -162,25 +172,53 @@ public class NetworkServer {
 
         log.info("正在启动Netty");
         try {
-            ServerBootstrap serverBootstrap = new ServerBootstrap();
-            serverBootstrap.group(parentGroup, workerGroup)
+            ServerBootstrap bs = new ServerBootstrap();
+            bs.group(parentGroup, workerGroup)
                     .channel(NioServerSocketChannel.class)
-                    .handler(new LoggingHandler(LogLevel.DEBUG)) // Channel Debug等级日志记录器，用于调试
-                    .childHandler(new ChannelInitializer<SocketChannel>() { //初始化新连接客户端配置
+                    .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
-                        protected void initChannel(SocketChannel ch) throws Exception {
-                            ChannelPipeline pipeline = ch.pipeline();
+                        public void initChannel(SocketChannel channel) {
+                            ChannelPipeline pipeline = channel.pipeline();
                             try {
                                 CertTask.get();
-                            } catch (InterruptedException | ExecutionException e) {
+                                pipeline.addLast(
+                                        SslContextBuilder.forServer(ServerSSLPrivateKey, ServerSSLCertificate)
+                                                .sslProvider(SslProvider.JDK)
+                                                .clientAuth(ClientAuth.NONE)
+                                                .build()
+                                                .newHandler(channel.alloc())
+                                );
+                            } catch (SSLException | InterruptedException | ExecutionException e) {
                                 throw new RuntimeException("SSL Context Generate Failed!", e);
                             }
                             pipeline.addLast(new LoggingHandler(LogLevel.DEBUG));
+                            pipeline.addLast(new LineBasedFrameDecoder(Integer.MAX_VALUE));
+                            pipeline.addLast(new StringDecoder(StandardCharsets.UTF_8));
+                            pipeline.addLast(new StringEncoder(StandardCharsets.UTF_8));
+                            pipeline.addLast(new MessageToMessageEncoder<CharSequence>() {
+                                @Override
+                                protected void encode(ChannelHandlerContext ctx, CharSequence msg, List<Object> out) {
+                                    out.add(CharBuffer.wrap(msg + "\n"));
+                                }
+                            }); // 每行消息添加换行符
+                            pipeline.addLast(RecvMessageThreadPool, new ServerHandler());
                         }
-                    }
-                     );
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+                    });
+            future = bs.bind(serverPort).sync();
+            log.info("JavaIM网络层启动完成");
+            synchronized (NetworkServer.class) {
+                NetworkServer.class.notifyAll();
+            }
+        } catch (InterruptedException e) {
+            log.error("出现错误!", e);
         }
     }
+
+    private class ServerHandler extends ChannelInboundHandlerAdapter {
+
+    }
+
+    public void stop() {
+    }
 }
+
