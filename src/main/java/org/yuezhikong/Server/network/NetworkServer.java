@@ -22,12 +22,15 @@ import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.logging.LogLevel;
-import io.netty.handler.logging.LoggingHandler;
-import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.codec.LineBasedFrameDecoder;
+import io.netty.handler.codec.MessageToMessageEncoder;
 import io.netty.handler.codec.string.StringDecoder;
 import io.netty.handler.codec.string.StringEncoder;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
+import io.netty.handler.ssl.ClientAuth;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.SslProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.bouncycastle.asn1.x500.X500Name;
@@ -40,16 +43,13 @@ import javax.net.ssl.SSLException;
 import java.io.File;
 import java.io.IOException;
 import java.math.BigInteger;
+import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
-import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
 import java.util.Base64;
 import java.util.Date;
-import java.net.SocketAddress;
-import java.nio.charset.StandardCharsets;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -64,9 +64,11 @@ public class NetworkServer {
      */
     private EventLoopGroup parentGroup, workerGroup;
     private DefaultEventLoopGroup RecvMessageThreadPool;
-
+    private ChannelFuture future;
     private PrivateKey ServerSSLPrivateKey;
     private X509Certificate ServerSSLCertificate;
+    private Channel serverChannel;
+    private boolean isRunning = false;
 
     private CertificateInfo setCertificateInfo(CertificateInfo info) {
         Certificate cert = new Certificate();
@@ -136,44 +138,6 @@ public class NetworkServer {
     }
     public void start(ExecutorService ThreadPool, @Range(from = 1, to = 65535) int serverPort){
         // Java 16 新特性
-    private Channel serverChannel;
-    private boolean isRunning = false;
-
-    // 用于在内存中统一管理所有在线客户端的并发 Map
-    private final Map<ChannelId, NetworkClient> onlineClients = new ConcurrentHashMap<>();
-
-    /**
-     * 客户端会话包装类
-     */
-    public static class NetworkClient {
-        private final ChannelHandlerContext ctx;
-
-        public NetworkClient(ChannelHandlerContext ctx) {
-            this.ctx = ctx;
-        }
-
-        public SocketAddress getSocketAddress() {
-            return ctx.channel().remoteAddress();
-        }
-
-        public void send(String message) throws IllegalStateException {
-            if (!ctx.channel().isActive()) {
-                throw new IllegalStateException("客户端已断开连接");
-            }
-            ctx.writeAndFlush(message + "\n");
-        }
-
-        public void disconnect() {
-            ctx.close();
-        }
-    }
-
-    public void start(ExecutorService ThreadPool, @Range(from = 1, to = 65535) int serverPort) {
-        if (isRunning) {
-            log.warn("服务端已经启动，请勿重复操作");
-            return;
-        }
-
         record NettyThreadPoolTaskReturn(
                 EventLoopGroup parentGroup,
                 EventLoopGroup workerGroup,
@@ -191,10 +155,10 @@ public class NetworkServer {
 
         Future<?> NettyThreadPoolTask = ThreadPool.submit(() -> {
             log.info("正在创建线程池");
-            EventLoopGroup bossGroup = new NioEventLoopGroup(2);
+            EventLoopGroup parentGroup = new NioEventLoopGroup(2);
             EventLoopGroup workerGroup = new NioEventLoopGroup(10);
             DefaultEventLoopGroup RecvMessageThreadPool = new DefaultEventLoopGroup(10);
-            return new NettyThreadPoolTaskReturn(bossGroup, workerGroup, RecvMessageThreadPool);
+            return new NettyThreadPoolTaskReturn(parentGroup, workerGroup, RecvMessageThreadPool);
         });
 
         try {
@@ -207,104 +171,54 @@ public class NetworkServer {
         }
 
         log.info("正在启动Netty");
-
-
-        //以下是搬入并补全的 Netty 核心运行与事件监听代码
         try {
-            ServerBootstrap b = new ServerBootstrap();
-            b.group(bossGroup, workerGroup)
+            ServerBootstrap bs = new ServerBootstrap();
+            bs.group(parentGroup, workerGroup)
                     .channel(NioServerSocketChannel.class)
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
-                        protected void initChannel(SocketChannel ch) {
-                            ChannelPipeline pipeline = ch.pipeline();
-
-                            // 纯文本流水线
+                        public void initChannel(SocketChannel channel) {
+                            ChannelPipeline pipeline = channel.pipeline();
+                            try {
+                                CertTask.get();
+                                pipeline.addLast(
+                                        SslContextBuilder.forServer(ServerSSLPrivateKey, ServerSSLCertificate)
+                                                .sslProvider(SslProvider.JDK)
+                                                .clientAuth(ClientAuth.NONE)
+                                                .build()
+                                                .newHandler(channel.alloc())
+                                );
+                            } catch (SSLException | InterruptedException | ExecutionException e) {
+                                throw new RuntimeException("SSL Context Generate Failed!", e);
+                            }
+                            pipeline.addLast(new LoggingHandler(LogLevel.DEBUG));
+                            pipeline.addLast(new LineBasedFrameDecoder(Integer.MAX_VALUE));
                             pipeline.addLast(new StringDecoder(StandardCharsets.UTF_8));
                             pipeline.addLast(new StringEncoder(StandardCharsets.UTF_8));
-
-                            // 客户端事件核心处理器
-                            pipeline.addLast(new SimpleChannelInboundHandler<String>() {
+                            pipeline.addLast(new MessageToMessageEncoder<CharSequence>() {
                                 @Override
-                                public void channelActive(ChannelHandlerContext ctx) {
-                                    // 客户端连入：包装并丢进在线列表
-                                    NetworkClient client = new NetworkClient(ctx);
-                                    onlineClients.put(ctx.channel().id(), client);
-                                    log.info("【网络层】有客户端连入: {}，当前在线人数: {}", ctx.channel().remoteAddress(), onlineClients.size());
+                                protected void encode(ChannelHandlerContext ctx, CharSequence msg, List<Object> out) {
+                                    out.add(CharBuffer.wrap(msg + "\n"));
                                 }
-
-                                @Override
-                                protected void channelRead0(ChannelHandlerContext ctx, String msg) {
-                                    log.info("【网络层】收到来自[{}]的消息: {}", ctx.channel().remoteAddress(), msg);
-                                    // 临时复读机，后续直接在此对接你的 protocol 层
-                                    NetworkClient client = onlineClients.get(ctx.channel().id());
-                                    if (client != null) {
-                                        client.send("Lite服务端收到你的小纸条: " + msg);
-                                    }
-                                }
-
-                                @Override
-                                public void channelInactive(ChannelHandlerContext ctx) {
-                                    // 客户端断开：移出在线列表
-                                    onlineClients.remove(ctx.channel().id());
-                                    log.info("【网络层】客户端断开: {}，当前在线人数: {}", ctx.channel().remoteAddress(), onlineClients.size());
-                                }
-
-                                @Override
-                                public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-                                    log.error("【网络层】通道异常: {}", cause.getMessage());
-                                    ctx.close();
-                                }
-                            });
+                            }); // 每行消息添加换行符
+                            pipeline.addLast(RecvMessageThreadPool, new ServerHandler());
                         }
                     });
-
-            log.info("正在绑定并监听端口: {}", serverPort);
-            ChannelFuture f = b.bind(serverPort).sync();
-            serverChannel = f.channel();
-            isRunning = true;
-            log.info("JavaIM Lite Netty 网络内核成功跑起来了！");
-
-        } catch (Exception e) {
-            log.error("Netty 绑定端口或运行期间发生崩溃！", e);
-            stop();
-        }
-    }
-
-    /**
-     * 5. 搬入功能：获取当前在线客户端列表的能力
-     */
-    public NetworkClient[] getOnlineClients() {
-        return onlineClients.values().toArray(new NetworkClient[0]);
-    }
-
-    public boolean isRunning() {
-        return this.isRunning;
-    }
-
-    /**
-     * 6. 搬入功能：停机，释放线程池与端口
-     */
-    public void stop() {
-        if (!isRunning) return;
-        log.info("正在关闭网络层...");
-        isRunning = false;
-
-        for (NetworkClient client : onlineClients.values()) {
-            client.disconnect();
-        }
-        onlineClients.clear();
-
-        try {
-            if (serverChannel != null) {
-                serverChannel.close().sync();
+            future = bs.bind(serverPort).sync();
+            log.info("JavaIM网络层启动完成");
+            synchronized (NetworkServer.class) {
+                NetworkServer.class.notifyAll();
             }
-        } catch (InterruptedException ignored) {}
+        } catch (InterruptedException e) {
+            log.error("出现错误!", e);
+        }
+    }
 
-        if (bossGroup != null) bossGroup.shutdownGracefully();
-        if (workerGroup != null) workerGroup.shutdownGracefully();
-        if (RecvMessageThreadPool != null) RecvMessageThreadPool.shutdownGracefully();
-        log.info("网络层已彻底关闭释放");
+    private class ServerHandler extends ChannelInboundHandlerAdapter {
+
+    }
+
+    public void stop() {
     }
 }
 

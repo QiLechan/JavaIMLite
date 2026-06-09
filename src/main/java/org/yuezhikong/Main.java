@@ -80,23 +80,17 @@ public class Main {
         } else
             ConfigFileManager.reloadServerConfig();
         serverPort = Integer.parseInt(ConfigFileManager.getServerConfig("serverPort", "8080"));
-
         // 服务端线程组，便于统一停止
         ThreadGroup serverGroup = new ThreadGroup(Thread.currentThread().getThreadGroup(), "serverGroup");
         try {
-            // 定义全局的 server 变量，方便在异常或退出时进行 stop 释放
-            final Server server = new Server();
-
             Thread t = new Thread(serverGroup, "ServerThread") {
                 @Override
                 public void run() {
-                    log.info("核心服务线程已唤醒，正在绑定端口并发起网络监听...");
-                    // 完美对应我们修改后的 Server.java 启动方法
-                    server.start(serverPort);
+                    new Server().start(serverPort);
                 }
             };
             t.start();
-            t.join(); // 主线程挂起等待，直到业务线程结束
+            t.join();
         } catch (InterruptedException e) {
             log.error("出现错误!", e);
         }
