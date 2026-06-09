@@ -1,65 +1,101 @@
-/*
- * Simplified Chinese (简体中文)
- *
- * 版权所有 (C) 2023 QiLechan <qilechan@outlook.com> 和本程序的贡献者
- *
- * 本程序是自由软件：你可以再分发之和/或依照由自由软件基金会发布的 GNU 通用公共许可证修改之，无论是版本 3 许可证，还是 3 任何以后版都可以。
- * 发布该程序是希望它能有用，但是并无保障;甚至连可销售和符合某个特定的目的都不保证。请参看 GNU 通用公共许可证，了解详情。
- * 你应该随程序获得一份 GNU 通用公共许可证的副本。如果没有，请看 <https://www.gnu.org/licenses/>。
- * English (英语)
- *
- * Copyright (C) 2023 QiLechan <qilechan@outlook.com> and contributors to this program
- *
- *  This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or 3 any later version.
- * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
- * You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
- */
-
 package org.yuezhikong.Server.network;
 
-import io.netty.channel.DefaultEventLoopGroup;
-import io.netty.channel.EventLoopGroup;
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.codec.string.StringDecoder;
+import io.netty.handler.codec.string.StringEncoder;
 import lombok.extern.slf4j.Slf4j;
-import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Range;
-import org.yuezhikong.Server.Server;
 
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.nio.charset.StandardCharsets;
 
 @Slf4j
 public class NetworkServer {
-    private EventLoopGroup bossGroup, workerGroup;
-    private DefaultEventLoopGroup RecvMessageThreadPool;
-    public void start(ExecutorService ThreadPool, @Range(from = 1, to = 65535) int serverPort){
-        // Java 16 新特性
-        record NettyThreadPoolTaskReturn(
-                EventLoopGroup bossGroup,
-                EventLoopGroup workerGroup,
-                DefaultEventLoopGroup RecvMessageThreadPool) {
+    private EventLoopGroup bossGroup;
+    private EventLoopGroup workerGroup;
+    private Channel serverChannel;
+    private boolean isRunning = false;
+
+
+    public void start(@Range(from = 1, to = 65535) int serverPort) {
+        if (isRunning) {
+            log.warn("Netty 服务端已经启动，请勿重复操作");
+            return;
         }
 
-        Future<?> NettyThreadPoolTask = ThreadPool.submit(() -> {
-            log.info("正在创建线程池");
-            EventLoopGroup bossGroup = new NioEventLoopGroup(2);
-            EventLoopGroup workerGroup = new NioEventLoopGroup(10);
-            DefaultEventLoopGroup RecvMessageThreadPool = new DefaultEventLoopGroup(10);
-            return new NettyThreadPoolTaskReturn(bossGroup, workerGroup, RecvMessageThreadPool);
-        });
+        log.info("正在创建 Netty 线程池...");
+        bossGroup = new NioEventLoopGroup(1);
+        workerGroup = new NioEventLoopGroup(4);
 
         try {
-            NettyThreadPoolTaskReturn taskReturn = (NettyThreadPoolTaskReturn) NettyThreadPoolTask.get();
-            bossGroup = taskReturn.bossGroup();
-            workerGroup = taskReturn.workerGroup();
-            RecvMessageThreadPool = taskReturn.RecvMessageThreadPool();
-        } catch (InterruptedException | ExecutionException e) {
-            throw new RuntimeException("Thread Pool Fatal", e);
-        }
+            ServerBootstrap b = new ServerBootstrap();
+            b.group(bossGroup, workerGroup)
+                    .channel(NioServerSocketChannel.class) // 使用 NIO 模式
+                    .childHandler(new ChannelInitializer<SocketChannel>() {
+                        @Override
+                        protected void initChannel(SocketChannel ch) {
+                            ChannelPipeline pipeline = ch.pipeline();
 
-        log.info("正在启动Netty");
+
+                            pipeline.addLast(new StringDecoder(StandardCharsets.UTF_8));
+                            pipeline.addLast(new StringEncoder(StandardCharsets.UTF_8));
+
+                            pipeline.addLast(new SimpleChannelInboundHandler<String>() {
+                                @Override
+                                protected void channelRead0(ChannelHandlerContext ctx, String msg) {
+                                    log.info("【网络层】收到客户端[{}]的消息: {}", ctx.channel().remoteAddress(), msg);
+                                    ctx.writeAndFlush("服务器已收到: " + msg + "\n");
+                                }
+
+                                @Override
+                                public void channelActive(ChannelHandlerContext ctx) {
+                                    log.info("【网络层】有新客户端连入了: {}", ctx.channel().remoteAddress());
+                                }
+
+                                @Override
+                                public void channelInactive(ChannelHandlerContext ctx) {
+                                    log.info("【网络层】客户端断开连接: {}", ctx.channel().remoteAddress());
+                                }
+
+                                @Override
+                                public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+                                    log.error("【网络层】通道发生异常", cause);
+                                    ctx.close();
+                                }
+                            });
+                        }
+                    });
+
+            log.info("正在绑定并监听端口: {}", serverPort);
+            ChannelFuture f = b.bind(serverPort).sync();
+            serverChannel = f.channel();
+            isRunning = true;
+            log.info("JavaIM Lite Netty 服务端启动成功！");
+
+        } catch (Exception e) {
+            log.error("Netty 启动失败！", e);
+            stop();
+        }
+    }
+
+    public boolean isRunning() {
+        return this.isRunning;
+    }
+
+    public void stop() {
+        log.info("正在关闭 Lite 服务端...");
+        isRunning = false;
+        try {
+            if (serverChannel != null) {
+                serverChannel.close().sync();
+            }
+        } catch (InterruptedException ignored) {}
+
+        if (bossGroup != null) bossGroup.shutdownGracefully();
+        if (workerGroup != null) workerGroup.shutdownGracefully();
+        log.info("服务端已安全关闭");
     }
 }

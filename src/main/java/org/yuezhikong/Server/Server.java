@@ -14,28 +14,18 @@
  * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
  * You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-
 package org.yuezhikong.Server;
 
-import lombok.Getter;
-
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
+import org.yuezhikong.Server.network.NetworkServer;
 
 public class Server {
-    @Getter
-    private static Server Instance;
+    private final NetworkServer networkServer = new NetworkServer();
 
-    @Getter
-    private final ThreadGroup serverThreadGroup = Thread.currentThread().getThreadGroup();
-
-    public void start(int serverPort){
-        // 创建线程池
-        ExecutorService ThreadPool = Executors.newCachedThreadPool();
+    public void start(int port) {
+        networkServer.start(port);
     }
 
-    public static Server getServerInstance() {
-        return Server.getInstance();
+    public void stop() {
+        networkServer.stop();
     }
 }
