@@ -21,12 +21,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.UnknownNullability;
-import org.yuezhikong.Server.IServer;
+import org.yuezhikong.Server.protocol.SystemProtocol;
 import org.yuezhikong.Server.user.User;
-import org.yuezhikong.Server.userData.user;
-import org.yuezhikong.Server.userData.userInformation;
+import org.yuezhikong.Server.user.userInformation;
 import org.yuezhikong.utils.SHA256;
-import org.yuezhikong.utils.protocol.SystemProtocol;
 
 import javax.security.auth.login.AccountNotFoundException;
 import java.util.ArrayList;
@@ -73,10 +71,10 @@ public abstract class ServerAPI {
      * @param inputMessage 要发信的信息
      */
     public void sendMessageToAllClient(@NotNull @Nls String inputMessage) {
-        List<user> ValidClientList = getValidUserList(true);
+        List<User> ValidClientList = getValidUserList(true);
         String[] inputs = inputMessage.replaceAll("\r", "").split("\n");
         for (String input : inputs) {
-            for (user User : ValidClientList) {
+            for (User User : ValidClientList) {
                 sendMessageToUser(User, input);
             }
         }
@@ -88,10 +86,10 @@ public abstract class ServerAPI {
      * @return 有效的客户端列表
      * @apiNote 用户列表更新后，您获取到的list不会被更新！请勿长时间保存此数据，长时间保存将变成过期数据
      */
-    public @NotNull List<user> getValidUserList(boolean CheckLoginStatus) {
-        List<user> AllClientList = ServerInstance.getUsers();
-        List<user> ValidClientList = new ArrayList<>();
-        for (user User : AllClientList) {
+    public @NotNull List<User> getValidUserList(boolean CheckLoginStatus) {
+        List<User> AllClientList = ServerInstance.getUsers();
+        List<User> ValidClientList = new ArrayList<>();
+        for (User User : AllClientList) {
             if (User == null)
                 continue;
             if (CheckLoginStatus && !User.isUserLogged())
@@ -110,9 +108,9 @@ public abstract class ServerAPI {
      * @return 用户User Data Class
      * @throws AccountNotFoundException 无法根据指定的用户名找到用户时抛出此异常
      */
-    public @NotNull user getUserByUserName(@NotNull @Nls String UserName) throws AccountNotFoundException {
-        List<user> ValidClientList = getValidUserList(true);
-        for (user User : ValidClientList) {
+    public @NotNull User getUserByUserName(@NotNull @Nls String UserName) throws AccountNotFoundException {
+        List<User> ValidClientList = getValidUserList(true);
+        for (User User : ValidClientList) {
             if (User.getUserName().equals(UserName)) {
                 return User;
             }
@@ -120,22 +118,22 @@ public abstract class ServerAPI {
         throw new AccountNotFoundException("This UserName Is Not Found,if this UserName No Login?");//找不到用户时抛出异常
     }
 
-    public void changeUserPassword(user User, String password) {
+    public void changeUserPassword(User User, String password) {
         userInformation information = User.getUserInformation();
         information.setPasswd(SHA256.sha256(password + information.getSalt()));
         User.setUserInformation(information);
     }
 
-    public @NotNull user getUserByUserId(String userId) throws AccountNotFoundException {
-        for (user User : getValidUserList(true)) {
-            if (User.getUserInformation().getUserId().equals(userId)) {
+    public @NotNull User getUserByUserId(String UserId) throws AccountNotFoundException {
+        for (User User : getValidUserList(true)) {
+            if (User.getUserInformation().getUserId().equals(UserId)) {
                 return User;
             }
         }
-        throw new AccountNotFoundException("This userId not Found");
+        throw new AccountNotFoundException("This UserId not Found");
     }
 
-    public void sendJsonToClient(User user, String json, String systemProtocol) {
+    public void sendJsonToClient(User User, String json, String systemProtocol) {
 
     }
 }
