@@ -22,11 +22,30 @@ import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.string.StringDecoder;
 import io.netty.handler.codec.string.StringEncoder;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FileUtils;
+import org.bouncycastle.asn1.x500.X500Name;
 import org.jetbrains.annotations.Range;
+import org.yuezhikong.SystemConfig;
+import org.yuezhikong.utils.cert.Certificate;
+import org.yuezhikong.utils.cert.CertificateInfo;
 
+import javax.net.ssl.SSLException;
+import java.io.File;
+import java.io.IOException;
+import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.cert.X509Certificate;
+import java.util.Base64;
+import java.util.Date;
 import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -34,20 +53,97 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+
+import static org.yuezhikong.utils.cert.Certificate.*;
 
 @Slf4j
 public class NetworkServer {
-    //增加保存服务器通道和在线状态的变量
-    private EventLoopGroup bossGroup, workerGroup;
+    /**
+     * 设置用于接受客户端连接的parentGroup，以及处理客户端数据读写的workerGroup
+     */
+    private EventLoopGroup parentGroup, workerGroup;
     private DefaultEventLoopGroup RecvMessageThreadPool;
+
+    private PrivateKey ServerSSLPrivateKey;
+    private X509Certificate ServerSSLCertificate;
+
+    private CertificateInfo setCertificateInfo(CertificateInfo info) {
+        Certificate cert = new Certificate();
+        long currentTimeMillis = System.currentTimeMillis();
+        Certificate.SubjectBuilder builder = cert.new SubjectBuilder();
+        X500Name subject = builder
+                .setCn(SystemConfig.getServerName())
+                .setL("Shanghai")
+                .setO("JavaIM-Server")
+                .setSt("Shanghai")
+                .setC("CN")
+                .setOu(SystemConfig.getServerName())
+                .build();
+        info.setIssuer(subject);
+        info.setSerial(BigInteger.valueOf(currentTimeMillis));
+        info.setKeyAlgorithm(KEY_ALGORITHM);
+        info.setNotBefore(new Date(currentTimeMillis));
+        info.setNotAfter(new Date(currentTimeMillis + TimeUnit.DAYS.toMillis(365 * 10)));
+        info.setSubject(subject);
+        info.setSignAlgorithm(SIGN_ALGORITHM);
+        return info;
+    }
+
+    private static String lf(String str, int length) {
+        StringBuilder builder = new StringBuilder();
+        char[] chars = str.toCharArray();
+        int count = 0;
+        for (char c : chars) {
+            builder.append(c);
+            count++;
+            if (count == length) {
+                builder.append("\n");
+                count = 0;
+            }
+        }
+        if (count != 0) {
+            builder.append("\n");
+        }
+        return builder.toString();
+    }
+
+    private void X509CertificateGenerate() throws Throwable {
+        CertificateInfo certinfo = new CertificateInfo();
+        certinfo = setCertificateInfo(certinfo);
+        Certificate.keyAndCertificate kc = generateCertificate(certinfo);
+        byte[] privateKeyEncode = kc.privateKey().getEncoded();
+        String privateKeyContent =
+                Base64.getEncoder().encodeToString(privateKeyEncode);
+        try {
+            FileUtils.writeStringToFile(new File("./ServerEncryption/private.key"), privateKeyContent, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to Write private key.", e);
+        }
+        byte[] certificateEncode = kc.certificate().getEncoded();
+        String certificateContent =
+                "-----BEGIN CERTIFICATE-----\n" +
+                        lf(Base64.getEncoder().encodeToString(certificateEncode), 64) +
+                        "-----END CERTIFICATE-----";
+        try {
+            FileUtils.writeStringToFile(new File("./ServerEncryption/cert.crt"), certificateContent, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to write cert to file.", e);
+        }
+        log.info("CA证书创建完成");
+        log.info("请分发ServerEncryption文件夹中的cert.crt到各个客户端");
+        log.info("请注意，ServerEncryption文件夹中的“private.key”如果泄露，您与客户端的连接将可能被劫持");
+    }
+    public void start(ExecutorService ThreadPool, @Range(from = 1, to = 65535) int serverPort){
+        // Java 16 新特性
     private Channel serverChannel;
     private boolean isRunning = false;
 
-    // 2. 搬入功能：用于在内存中统一管理所有在线客户端的并发 Map
+    // 用于在内存中统一管理所有在线客户端的并发 Map
     private final Map<ChannelId, NetworkClient> onlineClients = new ConcurrentHashMap<>();
 
     /**
-     * 3. 搬入功能：客户端会话包装类
+     * 客户端会话包装类
      */
     public static class NetworkClient {
         private final ChannelHandlerContext ctx;
@@ -79,10 +175,19 @@ public class NetworkServer {
         }
 
         record NettyThreadPoolTaskReturn(
-                EventLoopGroup bossGroup,
+                EventLoopGroup parentGroup,
                 EventLoopGroup workerGroup,
                 DefaultEventLoopGroup RecvMessageThreadPool) {
         }
+
+        Future<?> CertTask = ThreadPool.submit(() -> {
+            log.info("正在生成 X.509 SSL证书");
+            try {
+                X509CertificateGenerate();
+            } catch (Throwable e) {
+                throw new RuntimeException(e);
+            }
+        });
 
         Future<?> NettyThreadPoolTask = ThreadPool.submit(() -> {
             log.info("正在创建线程池");
@@ -94,7 +199,7 @@ public class NetworkServer {
 
         try {
             NettyThreadPoolTaskReturn taskReturn = (NettyThreadPoolTaskReturn) NettyThreadPoolTask.get();
-            bossGroup = taskReturn.bossGroup();
+            parentGroup = taskReturn.parentGroup();
             workerGroup = taskReturn.workerGroup();
             RecvMessageThreadPool = taskReturn.RecvMessageThreadPool();
         } catch (InterruptedException | ExecutionException e) {
