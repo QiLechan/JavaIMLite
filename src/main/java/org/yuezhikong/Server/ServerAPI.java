@@ -10,7 +10,7 @@
  *
  * Copyright (C) 2023 QiLechan <qilechan@outlook.com> and contributors to this program
  *
- * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or 3 any later version.
+ *  This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or 3 any later version.
  * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
  * You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
@@ -23,6 +23,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.UnknownNullability;
 import org.yuezhikong.Server.protocol.GeneralProtocol;
 import org.yuezhikong.Server.protocol.SystemProtocol;
+import org.yuezhikong.Server.user.ConsoleUser;
 import org.yuezhikong.Server.user.User;
 import org.yuezhikong.Server.user.userInformation;
 import org.yuezhikong.SystemConfig;
@@ -135,17 +136,5 @@ public abstract class ServerAPI {
         throw new AccountNotFoundException("This UserId not Found");
     }
 
-    public void sendJsonToClient(@NotNull User user, @NotNull String InputData, @NotNull String ProtocolType) {
-        GeneralProtocol protocol = new GeneralProtocol();
-        Gson gson = new Gson();
-        protocol.setProtocolVersion(SystemConfig.getProtocolVersion());
-        protocol.setProtocolName(ProtocolType);
-        protocol.setProtocolData(InputData);
-
-        String SendData = gson.toJson(protocol);
-        if (user instanceof ConsoleUser)
-            log.info(SendData);
-        else if (user instanceof NetworkUser)
-            ((NetworkUser) user).getNetworkClient().send(SendData);
-    }
+    public abstract void sendJsonToClient(@NotNull User user, @NotNull String InputData, @NotNull String ProtocolType);
 }

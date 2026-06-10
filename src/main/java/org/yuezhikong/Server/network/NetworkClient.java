@@ -15,38 +15,41 @@
  * You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-package org.yuezhikong.Server.protocol;
+package org.yuezhikong.Server.network;
 
-import lombok.Data;
+import org.yuezhikong.Server.user.NetworkUser;
 
-import java.util.List;
+import java.net.SocketAddress;
 
-/**
- * 一个用于转发文件/消息的协议
- * type:transfer
- * 转发到用户（尚未完成）
- * 此模式下，body约定List中的第一个会把发送到目标用户\，其他全部忽略
- * type:upload或download
- * 上传或下载文件文件
- * upload只会出现在客户端->服务端，download只会出现在服务端->客户端
- * 此模式下，body约定List中的第一个是文件名，第二个为文件内容，其他全部忽略
- * type:fileList
- * 文件列表
- * 此模式下，body约定List中每一个元素都是上传的文件的文件名
- */
-@Data
-public class TransferProtocol {
-    private TransferProtocolHeadBean TransferProtocolHead;
-    private List<TransferProtocolBodyBean> TransferProtocolBody;
+public interface NetworkClient {
+    /**
+     * 获取客户端的IP地址
+     *
+     * @return IP地址
+     */
+    SocketAddress getSocketAddress();
 
-    @Data
-    public static class TransferProtocolHeadBean {
-        private String TargetUserName;
-        private String Type;
-    }
+    /**
+     * 发信给此客户端
+     *
+     * @throws IllegalStateException 客户端已断开连接
+     */
+    void send(String message) throws IllegalStateException;
 
-    @Data
-    public static class TransferProtocolBodyBean {
-        private String Data;
-    }
+    /**
+     * 是否在线
+     *
+     * @return 是否在线
+     */
+    boolean isOnline();
+
+    /**
+     * 断开连接
+     */
+    void disconnect();
+
+    /**
+     * 获取user
+     */
+    NetworkUser getUser();
 }

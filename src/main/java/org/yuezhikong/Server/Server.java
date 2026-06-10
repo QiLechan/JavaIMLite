@@ -17,15 +17,23 @@
 
 package org.yuezhikong.Server;
 
+import com.google.gson.Gson;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.ibatis.session.SqlSession;
+import org.jetbrains.annotations.NotNull;
+import org.yuezhikong.Server.protocol.GeneralProtocol;
+import org.yuezhikong.Server.user.ConsoleUser;
+import org.yuezhikong.Server.user.NetworkUser;
 import org.yuezhikong.Server.user.User;
+import org.yuezhikong.SystemConfig;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+@Slf4j
 public class Server {
     @Getter
     private SqlSession sqlSession;
@@ -39,11 +47,29 @@ public class Server {
     private final List<User> users = new CopyOnWriteArrayList<>();
 
     @Getter
+    private final Gson gson = new Gson();
+
+    @Getter
     private final ThreadGroup serverThreadGroup = Thread.currentThread().getThreadGroup();
 
     public void start(int serverPort){
         // 创建线程池
         ExecutorService ThreadPool = Executors.newCachedThreadPool();
+        serverAPI = new ServerAPI(this) {
+            @Override
+            public void sendJsonToClient(@NotNull User user, @NotNull String InputData, @NotNull String ProtocolType) {
+                GeneralProtocol protocol = new GeneralProtocol();
+                protocol.setProtocolVersion(SystemConfig.getProtocolVersion());
+                protocol.setProtocolName(ProtocolType);
+                protocol.setProtocolData(InputData);
+
+                String SendData = gson.toJson(protocol);
+                if (user instanceof ConsoleUser)
+                    log.info(SendData);
+                else if (user instanceof NetworkUser)
+                    ((NetworkUser) user).getNetworkClient().send(SendData);
+            }
+        };
     }
 
     public void disconnectUser(User user) {

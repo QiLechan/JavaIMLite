@@ -39,6 +39,7 @@ import org.bouncycastle.asn1.x500.X500Name;
 import org.jetbrains.annotations.Range;
 import org.yuezhikong.Server.Server;
 import org.yuezhikong.Server.user.CommonUser;
+import org.yuezhikong.Server.user.User;
 import org.yuezhikong.SystemConfig;
 import org.yuezhikong.utils.cert.Certificate;
 import org.yuezhikong.utils.cert.CertificateInfo;
@@ -216,10 +217,10 @@ public class NetworkServer {
         }
     }
 
-    private class NetworkClient {
+    private class NetworkClient implements org.yuezhikong.Server.network.NetworkClient {
         @Getter
         private final NettyUser user;
-        @Getter
+
         private final SocketAddress address;
         private final Channel channel;
 
@@ -227,6 +228,11 @@ public class NetworkServer {
             this.user = user;
             this.address = address;
             this.channel = channel;
+        }
+
+        @Override
+        public SocketAddress getSocketAddress() {
+            return address;
         }
 
         public void send(String message) throws IllegalStateException {
@@ -262,6 +268,12 @@ public class NetworkServer {
 
         private void setNetworkClient(NetworkClient client) {
             this.client = client;
+        }
+
+        @Override
+        public User onUserLogin(String UserName) {
+            log.info(String.format("用户：%s(IP地址：%s) 登录完成", UserName, getNetworkClient().getSocketAddress()));
+            return super.onUserLogin(UserName);
         }
     }
     private class ServerHandler extends ChannelInboundHandlerAdapter {

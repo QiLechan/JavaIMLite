@@ -10,7 +10,7 @@
  *
  * Copyright (C) 2023 QiLechan <qilechan@outlook.com> and contributors to this program
  *
- * This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or 3 any later version.
+ *  This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or 3 any later version.
  * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
  * You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
@@ -24,7 +24,7 @@ import static org.yuezhikong.utils.ConfigFileManager.getServerConfig;
 public final class SystemConfig {
     //协议版本
     @Getter
-    private static final int ProtocolVersion = 13;
+    private static final int ProtocolVersion = 1;
     //本程序版本：
     @Getter
     private static final String Version = "InDev";
