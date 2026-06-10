@@ -24,6 +24,7 @@ import org.jetbrains.annotations.UnknownNullability;
 import org.yuezhikong.Server.protocol.GeneralProtocol;
 import org.yuezhikong.Server.protocol.SystemProtocol;
 import org.yuezhikong.Server.user.ConsoleUser;
+import org.yuezhikong.Server.user.NetworkUser;
 import org.yuezhikong.Server.user.User;
 import org.yuezhikong.Server.user.userInformation;
 import org.yuezhikong.SystemConfig;
@@ -34,8 +35,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
-public abstract class ServerAPI {
+public class ServerAPI {
     private final Server ServerInstance;
+
+    private final Gson gson = new Gson();
 
     /**
      * 初始化服务端API
@@ -136,5 +139,16 @@ public abstract class ServerAPI {
         throw new AccountNotFoundException("This UserId not Found");
     }
 
-    public abstract void sendJsonToClient(@NotNull User user, @NotNull String InputData, @NotNull String ProtocolType);
+    public void sendJsonToClient(@NotNull User user, @NotNull String InputData, @NotNull String ProtocolType) {
+        GeneralProtocol protocol = new GeneralProtocol();
+        protocol.setProtocolVersion(SystemConfig.getProtocolVersion());
+        protocol.setProtocolName(ProtocolType);
+        protocol.setProtocolData(InputData);
+
+        String SendData = gson.toJson(protocol);
+        if (user instanceof ConsoleUser)
+            log.info(SendData);
+        else if (user instanceof NetworkUser)
+            ((NetworkUser) user).getNetworkClient().send(SendData);
+    }
 }

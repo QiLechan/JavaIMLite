@@ -22,16 +22,17 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.ibatis.session.SqlSession;
 import org.jetbrains.annotations.NotNull;
+import org.yuezhikong.Server.network.NetworkServer;
 import org.yuezhikong.Server.protocol.GeneralProtocol;
 import org.yuezhikong.Server.user.ConsoleUser;
 import org.yuezhikong.Server.user.NetworkUser;
 import org.yuezhikong.Server.user.User;
 import org.yuezhikong.SystemConfig;
+import org.yuezhikong.utils.database.DatabaseHelper;
 
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.Map;
+import java.util.concurrent.*;
 
 @Slf4j
 public class Server {
@@ -50,26 +51,41 @@ public class Server {
     private final Gson gson = new Gson();
 
     @Getter
+    private NetworkServer networkServer;
+
+    @Getter
     private final ThreadGroup serverThreadGroup = Thread.currentThread().getThreadGroup();
 
     public void start(int serverPort){
+        networkServer =  new NetworkServer();
+        log.info("正在启动JavaIM");
+        Instance = this;
         // 创建线程池
         ExecutorService ThreadPool = Executors.newCachedThreadPool();
-        serverAPI = new ServerAPI(this) {
-            @Override
-            public void sendJsonToClient(@NotNull User user, @NotNull String InputData, @NotNull String ProtocolType) {
-                GeneralProtocol protocol = new GeneralProtocol();
-                protocol.setProtocolVersion(SystemConfig.getProtocolVersion());
-                protocol.setProtocolName(ProtocolType);
-                protocol.setProtocolData(InputData);
+        serverAPI = new ServerAPI(this) ;
 
-                String SendData = gson.toJson(protocol);
-                if (user instanceof ConsoleUser)
-                    log.info(SendData);
-                else if (user instanceof NetworkUser)
-                    ((NetworkUser) user).getNetworkClient().send(SendData);
-            }
-        };
+        new Thread(() -> {
+            Future<?> DatabaseStartTask = ThreadPool.submit(() -> {
+                log.info("正在启动数据库");
+                String JDBCUrl;
+                try {
+                    JDBCUrl = DatabaseHelper.InitDataBase();
+                } catch (Throwable throwable) {
+                    log.error("数据库启动失败", throwable);
+                    ThreadPool.shutdownNow();
+                    log.error("JavaIM启动失败，因为数据库出错");
+                    try {
+                        stop();
+                    } catch (NullPointerException ignored) {
+                    }
+                    log.info("JavaIM服务器已经关闭");
+                    return;
+                }
+                sqlSession = DatabaseHelper.InitMybatis(JDBCUrl);
+                log.info("数据库启动完成");
+            });
+            networkServer.start(ThreadPool, serverPort);
+        });
     }
 
     public void disconnectUser(User user) {
@@ -86,5 +102,9 @@ public class Server {
 
     public List<User> getUsers() {
         return List.of();
+    }
+
+    public void stop() {
+
     }
 }
