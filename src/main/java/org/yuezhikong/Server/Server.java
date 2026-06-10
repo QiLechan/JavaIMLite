@@ -22,6 +22,7 @@ import org.apache.ibatis.session.SqlSession;
 import org.yuezhikong.Server.user.User;
 
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -35,6 +36,8 @@ public class Server {
     @Getter
     private static Server Instance;
 
+    private final List<User> users = new CopyOnWriteArrayList<>();
+
     @Getter
     private final ThreadGroup serverThreadGroup = Thread.currentThread().getThreadGroup();
 
@@ -43,6 +46,17 @@ public class Server {
         ExecutorService ThreadPool = Executors.newCachedThreadPool();
     }
 
+    public void disconnectUser(User user) {
+        users.remove(user);
+    }
+
+    public boolean connectUser(User user) {
+        for (User ForEachUser : users) {
+            if (ForEachUser.getUserName().equals(user.getUserName()))
+                return false;
+        }
+        return users.add(user);
+    }
 
     public List<User> getUsers() {
         return List.of();

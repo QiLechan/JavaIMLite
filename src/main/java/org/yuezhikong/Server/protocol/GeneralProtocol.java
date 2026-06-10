@@ -3,7 +3,7 @@ package org.yuezhikong.Server.protocol;
 import lombok.Data;
 
 /**
- * ProtocolVersion：协议版本，固定CodeDynamicConfig中的ProtocolVersion
+ * ProtocolVersion：协议版本
  * ProtocolName：协议名，希望对端使用何种协议解析
  * ProtocolData：协议数据
  */

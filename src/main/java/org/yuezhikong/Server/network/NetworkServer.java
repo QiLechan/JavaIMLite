@@ -32,10 +32,13 @@ import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.ssl.ClientAuth;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslProvider;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.jetbrains.annotations.Range;
+import org.yuezhikong.Server.Server;
+import org.yuezhikong.Server.user.CommonUser;
 import org.yuezhikong.SystemConfig;
 import org.yuezhikong.utils.cert.Certificate;
 import org.yuezhikong.utils.cert.CertificateInfo;
@@ -44,14 +47,12 @@ import javax.net.ssl.SSLException;
 import java.io.File;
 import java.io.IOException;
 import java.math.BigInteger;
+import java.net.SocketAddress;
 import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
-import java.util.Base64;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -66,6 +67,7 @@ public class NetworkServer {
      */
     private EventLoopGroup parentGroup, workerGroup;
     private DefaultEventLoopGroup RecvMessageThreadPool;
+    private final List<NetworkClient> clientList = new ArrayList<>();
     private ChannelFuture future;
     private PrivateKey ServerSSLPrivateKey;
     private X509Certificate ServerSSLCertificate;
@@ -214,9 +216,72 @@ public class NetworkServer {
         }
     }
 
+    private class NetworkClient {
+        @Getter
+        private final NettyUser user;
+        @Getter
+        private final SocketAddress address;
+        private final Channel channel;
+
+        private NetworkClient(NettyUser user, SocketAddress address, Channel channel) {
+            this.user = user;
+            this.address = address;
+            this.channel = channel;
+        }
+
+        public void send(String message) throws IllegalStateException {
+            //checks.checkState(!isOnline(), "This user is now offline!");
+            channel.writeAndFlush(message);
+        }
+
+        public boolean isOnline() {
+            return clientList.contains(this);
+        }
+
+        public void disconnect() {
+            if (isOnline())
+                channel.disconnect();
+        }
+    }
+
+    private static class NettyUser extends CommonUser {
+        private NetworkClient client;
+        /**
+         * 获取此用户对应的网络客户端
+         *
+         * @return 网络客户端
+         */
+        NetworkClient getNetworkClient() {
+            return client;
+        }
+
+        @Override
+        public boolean isServer() {
+            return false;
+        }
+
+        private void setNetworkClient(NetworkClient client) {
+            this.client = client;
+        }
+    }
     private class ServerHandler extends ChannelInboundHandlerAdapter {
-        //private final HashMap<Channel, NetworkClient> clientNetworkClientPair = new HashMap<>();
+        private final HashMap<Channel, NetworkClient> clientNetworkClientPair = new HashMap<>();
         private final Gson gson = new Gson();
+
+        @Override
+        public void channelActive(ChannelHandlerContext channelHandlerContext) {
+            log.info("检测到新客户端连接...");
+            log.info("IP地址：{}", channelHandlerContext.channel().remoteAddress());
+            NettyUser nettyUser = new NettyUser();
+            if (!Server.getInstance().connectUser(nettyUser)) {
+                channelHandlerContext.channel().close();
+                return;
+            }
+            NetworkClient client = new NetworkClient(nettyUser, channelHandlerContext.channel().remoteAddress(), channelHandlerContext.channel());
+            nettyUser.setNetworkClient(client);
+            clientNetworkClientPair.put(channelHandlerContext.channel(), client);
+            clientList.add(client);
+        }
     }
 
     public void stop() {

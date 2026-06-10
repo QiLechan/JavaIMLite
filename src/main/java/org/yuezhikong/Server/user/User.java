@@ -10,14 +10,6 @@ public interface User {
     String getUserName();
 
     /**
-     * 当用户登录时
-     *
-     * @param UserName 用户名
-     * @apiNote 在用户登录时，请调用此方法
-     */
-    User onUserLogin(String UserName);
-
-    /**
      * 获取用户登录状态
      *
      * @return {@code true} 已登录, {@code false} 未登录

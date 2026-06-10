@@ -75,7 +75,6 @@ public final class UserAuthentication {
         serverAPI.sendJsonToClient(user, json, "SystemProtocol");
         //设置登录成功
         UserLogged = true;
-        user.onUserLogin(UserName);
         return true;
     }
 

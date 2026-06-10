@@ -21,9 +21,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.UnknownNullability;
+import org.yuezhikong.Server.protocol.GeneralProtocol;
 import org.yuezhikong.Server.protocol.SystemProtocol;
 import org.yuezhikong.Server.user.User;
 import org.yuezhikong.Server.user.userInformation;
+import org.yuezhikong.SystemConfig;
 import org.yuezhikong.utils.SHA256;
 
 import javax.security.auth.login.AccountNotFoundException;
@@ -133,7 +135,17 @@ public abstract class ServerAPI {
         throw new AccountNotFoundException("This UserId not Found");
     }
 
-    public void sendJsonToClient(User User, String json, String systemProtocol) {
+    public void sendJsonToClient(@NotNull User user, @NotNull String InputData, @NotNull String ProtocolType) {
+        GeneralProtocol protocol = new GeneralProtocol();
+        Gson gson = new Gson();
+        protocol.setProtocolVersion(SystemConfig.getProtocolVersion());
+        protocol.setProtocolName(ProtocolType);
+        protocol.setProtocolData(InputData);
 
+        String SendData = gson.toJson(protocol);
+        if (user instanceof ConsoleUser)
+            log.info(SendData);
+        else if (user instanceof NetworkUser)
+            ((NetworkUser) user).getNetworkClient().send(SendData);
     }
 }

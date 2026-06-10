@@ -22,8 +22,6 @@ import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactoryBuilder;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
-import org.yuezhikong.SystemConfig;
-import org.yuezhikong.utils.checks;
 
 import java.io.IOException;
 import java.sql.Connection;
@@ -45,29 +43,17 @@ public class DatabaseHelper {
         Connection connection = null;
         String JDBCUrl;
         try {
-            if (!SystemConfig.isUse_SQLITE_Mode()) {
-                JDBCUrl = "jdbc:mysql://" + SystemConfig.getMySQLDataBaseHost()
-                        + ":" + SystemConfig.getMySQLDataBasePort() + "/" + SystemConfig.getMySQLDataBaseName()
-                        + "?failOverReadOnly=false&maxReconnects=1000&serverTimezone=Asia/Shanghai&initialTimeout=1&autoReconnect=true";
-                Class.forName("com.mysql.cj.jdbc.Driver");
-                connection = DriverManager.getConnection(JDBCUrl, SystemConfig.getMySQLDataBaseUser(), SystemConfig.getMySQLDataBasePasswd());
-            } else {
-                Class.forName("org.sqlite.JDBC");
-                JDBCUrl = "jdbc:sqlite:data.db";
-                connection = DriverManager.getConnection(JDBCUrl);
-            }
+            Class.forName("org.sqlite.JDBC");
+            JDBCUrl = "jdbc:sqlite:data.db";
+            connection = DriverManager.getConnection(JDBCUrl);
             // 创建数据库表
             connection.createStatement().executeUpdate(
                     "CREATE TABLE if not exists UserData" +
                             " (" +
                             " userId varchar(255)," +        //用户ID
-                            " avatarFileId varchar(255)," +   //头像对应的文件ID
-                            " Permission INT," +            //权限等级，目前只有三个等级，-1级：被封禁用户，0级：普通用户，1级：管理员
                             " UserName varchar(255)," +     //用户名
                             " Passwd varchar(255)," +       //密码
                             " salt varchar(255)," +         //密码加盐加的盐
-                            " token varchar(255)," +         //Login Token
-                            " avatar varchar(255)" +         //头像Id
                             " );");
             connection.createStatement().executeUpdate(
                     "CREATE TABLE if not exists FileOwner" +
@@ -97,18 +83,11 @@ public class DatabaseHelper {
      * @return SQL会话
      */
     public static SqlSession InitMybatis(String JDBCUrl) {
-        checks.checkArgument(JDBCUrl == null, "JDBC Url can not be null!");
         Properties MybatisConfig = new Properties();
         MybatisConfig.setProperty("jdbc.url", JDBCUrl);
-        if (SystemConfig.isUse_SQLITE_Mode()) {
-            MybatisConfig.setProperty("jdbc.driver", "org.sqlite.JDBC");
-            MybatisConfig.setProperty("jdbc.username", "");
-            MybatisConfig.setProperty("jdbc.password", "");
-        } else {
-            MybatisConfig.setProperty("jdbc.driver", "com.mysql.cj.jdbc.Driver");
-            MybatisConfig.setProperty("jdbc.username", SystemConfig.getMySQLDataBaseUser());
-            MybatisConfig.setProperty("jdbc.password", SystemConfig.getMySQLDataBasePasswd());
-        }
+        MybatisConfig.setProperty("jdbc.driver", "org.sqlite.JDBC");
+        MybatisConfig.setProperty("jdbc.username", "");
+        MybatisConfig.setProperty("jdbc.password", "");
         try {
             return new SqlSessionFactoryBuilder().build(Resources.getResourceAsStream("mybatis-config.xml"), MybatisConfig).openSession(true);
         } catch (IOException e) {
@@ -128,18 +107,13 @@ public class DatabaseHelper {
      */
     @ApiStatus.Internal
     private static boolean CheckColumnsExist(String Columns, String TableName, @NotNull Connection DatabaseConnection) throws SQLException {
-        if (SystemConfig.isUse_SQLITE_Mode()) {
-            ResultSet rs = DatabaseConnection.createStatement().executeQuery("PRAGMA table_info (" + TableName + ")");
-            while (rs.next()) {
-                //查看此列名
-                String column = rs.getString("name");
-                if (Columns.equals(column)) {
-                    return true;
-                }
+        ResultSet rs = DatabaseConnection.createStatement().executeQuery("PRAGMA table_info (" + TableName + ")");
+        while (rs.next()) {
+            //查看此列名
+            String column = rs.getString("name");
+            if (Columns.equals(column)) {
+                return true;
             }
-        } else {
-            //查询UserData中是否存在列
-            return DatabaseConnection.createStatement().executeQuery("SHOW COLUMNS FROM " + TableName + " LIKE '" + Columns + "';").next();
         }
         return false;
     }
@@ -151,14 +125,6 @@ public class DatabaseHelper {
      * @throws SQLException SQL出错
      */
     public static void UpdateDatabase(@NotNull Connection DatabaseConnection) throws SQLException {
-        if (!CheckColumnsExist("token", "UserData", DatabaseConnection))
-            //不存在时，添加”token“列
-            DatabaseConnection.createStatement().executeUpdate("ALTER TABLE UserData ADD COLUMN token VARCHAR(255) NOT NULL DEFAULT '';");
-
-        if (!CheckColumnsExist("avatar", "UserData", DatabaseConnection))
-            //不存在时，添加“avatar”列
-            DatabaseConnection.createStatement().executeUpdate("ALTER TABLE UserData ADD COLUMN avatar VARCHAR(255) NOT NULL DEFAULT '';");
-
         if (!CheckColumnsExist("userId", "UserData", DatabaseConnection))
             //不存在时，添加“userId”列
             DatabaseConnection.createStatement().executeUpdate("ALTER TABLE UserData ADD COLUMN userId VARCHAR(255) NOT NULL DEFAULT '';");
