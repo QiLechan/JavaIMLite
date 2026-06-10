@@ -34,13 +34,10 @@ public class ConsoleUser implements User {
         throw new UnsupportedOperationException("Server can not disconnect");
     }
 
-
-
     @Override
     public boolean isServer() {
         return true;
     }
-
 
     @Override
     public User setUserAuthentication(@Nullable UserAuthentication Authentication) {
@@ -62,34 +59,3 @@ public class ConsoleUser implements User {
         throw new UnsupportedOperationException("server not in database");
     }
 }
-
-
-
-//    @Override
-//    public user setUserPermission(int permissionLevel) {
-//        throw new UnsupportedOperationException("Server can not set permission");
-//    }
-
-//    @Override
-//    public Permission getUserPermission() {
-//        return Permission.ADMIN;
-//    }
-//    @Override
-//    public boolean isAllowedTransferProtocol() {
-//        return false;
-//    }
-//
-//    @Override
-//    public user setAllowedTransferProtocol(boolean allowedTransferProtocol) {
-//        throw new UnsupportedOperationException("Server can not set TransferProtocol");
-//    }
-//
-//    @Override
-//    public user addLoginRecall(IUserAuthentication.UserRecall code) {
-//        throw new UnsupportedOperationException("Server can not login");
-//    }
-//
-//    @Override
-//    public user addDisconnectRecall(IUserAuthentication.UserRecall code) {
-//        throw new UnsupportedOperationException("Server can not disconnect");
-//    }
