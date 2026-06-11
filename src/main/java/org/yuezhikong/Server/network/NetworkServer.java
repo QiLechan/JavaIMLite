@@ -32,12 +32,15 @@ import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.ssl.ClientAuth;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslProvider;
+import io.netty.util.ReferenceCountUtil;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.jetbrains.annotations.Range;
 import org.yuezhikong.Server.Server;
+import org.yuezhikong.Server.protocol.GeneralProtocol;
+import org.yuezhikong.Server.protocol.SystemProtocol;
 import org.yuezhikong.Server.user.CommonUser;
 import org.yuezhikong.Server.user.User;
 import org.yuezhikong.SystemConfig;
@@ -281,18 +284,51 @@ public class NetworkServer {
         private final Gson gson = new Gson();
 
         @Override
-        public void channelActive(ChannelHandlerContext channelHandlerContext) {
+        public void channelActive(ChannelHandlerContext ctx) {
             log.info("检测到新客户端连接...");
-            log.info("IP地址：{}", channelHandlerContext.channel().remoteAddress());
+            log.info("IP地址：{}", ctx.channel().remoteAddress());
             NettyUser nettyUser = new NettyUser();
             if (!Server.getInstance().connectUser(nettyUser)) {
-                channelHandlerContext.channel().close();
+                ctx.channel().close();
                 return;
             }
-            NetworkClient client = new NetworkClient(nettyUser, channelHandlerContext.channel().remoteAddress(), channelHandlerContext.channel());
+            NetworkClient client = new NetworkClient(nettyUser, ctx.channel().remoteAddress(), ctx.channel());
             nettyUser.setNetworkClient(client);
-            clientNetworkClientPair.put(channelHandlerContext.channel(), client);
+            clientNetworkClientPair.put(ctx.channel(), client);
             clientList.add(client);
+        }
+
+        @Override
+        public void channelInactive(ChannelHandlerContext ctx) {
+            log.info("客户端断开连接...");
+            NetworkClient Client = clientNetworkClientPair.remove(ctx.channel());
+            if (Client != null) {
+                Server.getInstance().disconnectUser(Client.getUser());
+                clientList.remove(Client);
+            }
+        }
+
+        @Override
+        public void channelRead(ChannelHandlerContext ctx, Object msg) {
+            if (!(msg instanceof String Msg)) {
+                log.info(String.format("客户端：%s 发送了非String消息：%s", ctx.channel().remoteAddress(), msg.toString()));
+                return;
+            }
+            if (Msg.isEmpty()) {
+                log.info(String.format("客户端：%s 发送了空消息", ctx.channel().remoteAddress()));
+                SystemProtocol systemProtocol = new SystemProtocol();
+                systemProtocol.setType("Error");
+                systemProtocol.setMessage("Empty Packet");
+                GeneralProtocol protocol = new GeneralProtocol();
+                protocol.setProtocolVersion(SystemConfig.getProtocolVersion());
+                protocol.setProtocolName("SystemProtocol");
+                protocol.setProtocolData(gson.toJson(systemProtocol));
+                ctx.writeAndFlush(gson.toJson(protocol));
+                return;
+            }
+            NetworkClient thisClient = clientNetworkClientPair.get(ctx.channel());
+            Server.getInstance().onReceiveMessage(thisClient.getUser(), Msg);
+            ReferenceCountUtil.release(msg);
         }
     }
 

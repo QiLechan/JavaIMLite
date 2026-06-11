@@ -18,15 +18,16 @@
 package org.yuezhikong.Server;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonSyntaxException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.ibatis.session.SqlSession;
-import org.jetbrains.annotations.NotNull;
 import org.yuezhikong.Server.network.NetworkServer;
 import org.yuezhikong.Server.protocol.GeneralProtocol;
-import org.yuezhikong.Server.user.ConsoleUser;
-import org.yuezhikong.Server.user.NetworkUser;
+import org.yuezhikong.Server.protocol.SystemProtocol;
+import org.yuezhikong.Server.protocolHandler.ProtocolHandler;
 import org.yuezhikong.Server.user.User;
+import org.yuezhikong.Server.user.UserAuthentication;
 import org.yuezhikong.SystemConfig;
 import org.yuezhikong.utils.database.DatabaseHelper;
 
@@ -55,6 +56,8 @@ public class Server {
 
     @Getter
     private final ThreadGroup serverThreadGroup = Thread.currentThread().getThreadGroup();
+
+    private final Map<String, ProtocolHandler> protocolHandlerMap = new ConcurrentHashMap<>();
 
     public void start(int serverPort){
         networkServer =  new NetworkServer();
@@ -106,5 +109,29 @@ public class Server {
 
     public void stop() {
 
+    }
+
+    public void onReceiveMessage(User user, String msg) {
+        if (user.getUserAuthentication() == null)
+            user.setUserAuthentication(new UserAuthentication(user, this));
+        GeneralProtocol protocol;
+        try {
+            protocol = gson.fromJson(msg, GeneralProtocol.class);
+        } catch (JsonSyntaxException e) {
+            SystemProtocol systemProtocol = new SystemProtocol();
+            systemProtocol.setType("Error");
+            systemProtocol.setMessage("Protocol analysis failed");
+            serverAPI.sendJsonToClient(user, gson.toJson(systemProtocol), "SystemProtocol");
+            return;
+        }
+        if (protocol.getProtocolVersion() != SystemConfig.getProtocolVersion()) {
+            SystemProtocol systemProtocol = new SystemProtocol();
+            systemProtocol.setType("Error");
+            systemProtocol.setMessage("Protocol version not support");
+            serverAPI.sendJsonToClient(user, gson.toJson(systemProtocol), "SystemProtocol");
+            return;
+        }
+        ProtocolHandler handler = protocolHandlerMap.get(protocol.getProtocolName());
+        handler.handleProtocol(this, protocol.getProtocolData(), user);
     }
 }
