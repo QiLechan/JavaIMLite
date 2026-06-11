@@ -90,7 +90,7 @@ public class ServerAPI {
      * 获取有效的客户端列表
      *
      * @return 有效的客户端列表
-     * @apiNote 用户列表更新后，您获取到的list不会被更新！请勿长时间保存此数据，长时间保存将变成过期数据
+     * @apiNote 用户列表更新后，获取到的list不会被更新
      */
     public @NotNull List<User> getValidUserList(boolean CheckLoginStatus) {
         List<User> AllClientList = ServerInstance.getUsers();

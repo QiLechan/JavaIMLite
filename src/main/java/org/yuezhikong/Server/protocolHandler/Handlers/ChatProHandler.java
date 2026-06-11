@@ -1,4 +1,4 @@
-package org.yuezhikong.Server.protocolHandler.Handlers;
+package org.yuezhikong.Server.protocolHandler.handlers;
 
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
@@ -19,8 +19,6 @@ public class ChatProHandler implements ProtocolHandler {
             return;
         }
         ChatProtocol protocol = server.getGson().fromJson(protocolData, ChatProtocol.class); // 反序列化 json 到 object
-        if (((ChatRequestImpl) server.getRequest()).userChatRequests(user, protocol.getMessage()))  // 检查是否允许发送消息
-            return;
         log.info("[{}]:{}", user.getUserName(), protocol.getMessage());// 打印消息到log
 
         ChatProtocol chatProtocol = new ChatProtocol();// 封装数据包发给所有用户

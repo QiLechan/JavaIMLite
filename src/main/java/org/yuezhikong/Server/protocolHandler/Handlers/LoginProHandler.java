@@ -1,4 +1,4 @@
-package org.yuezhikong.Server.protocolHandler.Handlers;
+package org.yuezhikong.Server.protocolHandler.handlers;
 
 import com.google.gson.Gson;
 import org.jetbrains.annotations.NotNull;
