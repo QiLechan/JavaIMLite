@@ -53,7 +53,7 @@ public class DatabaseHelper {
                             " userId varchar(255)," +        //用户ID
                             " UserName varchar(255)," +     //用户名
                             " Passwd varchar(255)," +       //密码
-                            " salt varchar(255)," +         //密码加盐加的盐
+                            " salt varchar(255)" +         //密码加盐加的盐
                             " );");
             connection.createStatement().executeUpdate(
                     "CREATE TABLE if not exists FileOwner" +

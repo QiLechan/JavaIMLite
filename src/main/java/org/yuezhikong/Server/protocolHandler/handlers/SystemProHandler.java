@@ -1,20 +1,11 @@
 package org.yuezhikong.Server.protocolHandler.handlers;
 
 
-import org.apache.commons.io.FileUtils;
 import org.jetbrains.annotations.NotNull;
 import org.yuezhikong.Server.Server;
 import org.yuezhikong.Server.protocol.SystemProtocol;
-import org.yuezhikong.Server.protocol.TransferProtocol;
 import org.yuezhikong.Server.protocolHandler.ProtocolHandler;
 import org.yuezhikong.Server.user.User;
-import org.yuezhikong.utils.database.dao.userUploadFileDao;
-
-import java.io.File;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.List;
 
 public class SystemProHandler implements ProtocolHandler {
     @Override

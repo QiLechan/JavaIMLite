@@ -22,10 +22,20 @@ import com.google.gson.JsonSyntaxException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.ibatis.session.SqlSession;
+import org.jline.reader.EndOfFileException;
+import org.jline.reader.LineReader;
+import org.jline.reader.LineReaderBuilder;
+import org.jline.reader.UserInterruptException;
+import org.jline.terminal.Terminal;
+import org.yuezhikong.Main;
 import org.yuezhikong.Server.network.NetworkServer;
+import org.yuezhikong.Server.protocol.ChatProtocol;
 import org.yuezhikong.Server.protocol.GeneralProtocol;
 import org.yuezhikong.Server.protocol.SystemProtocol;
 import org.yuezhikong.Server.protocolHandler.ProtocolHandler;
+import org.yuezhikong.Server.protocolHandler.handlers.ChatProHandler;
+import org.yuezhikong.Server.protocolHandler.handlers.LoginProHandler;
+import org.yuezhikong.Server.protocolHandler.handlers.SystemProHandler;
 import org.yuezhikong.Server.user.User;
 import org.yuezhikong.Server.user.UserAuthentication;
 import org.yuezhikong.SystemConfig;
@@ -87,8 +97,50 @@ public class Server {
                 sqlSession = DatabaseHelper.InitMybatis(JDBCUrl);
                 log.info("数据库启动完成");
             });
-            networkServer.start(ThreadPool, serverPort);
-        });
+            protocolHandlerMap.put("ChatProtocol", new ChatProHandler());
+            protocolHandlerMap.put("LoginProtocol", new LoginProHandler());
+            protocolHandlerMap.put("SystemProtocol", new SystemProHandler());
+            Thread ConsoleUserRequestThread = new Thread(() -> {
+                Terminal terminal = Main.getTerminal();
+                LineReader reader = LineReaderBuilder.builder().terminal(terminal).build();
+                while (true) {
+                    try {
+                        String line = reader.readLine(">").trim();
+                        if (line.isEmpty())
+                            continue;
+                        if (!line.startsWith("/")) {
+                            // 聊天消息
+                            log.info("[Server]: {}", line);
+                            ChatProtocol chatProtocol = new ChatProtocol();
+                            chatProtocol.setSourceUserName("Server");
+                            chatProtocol.setMessage(line);
+                            String SendProtocolData = gson.toJson(chatProtocol);
+                            serverAPI.getValidUserList(true).forEach((user) ->
+                                    serverAPI.sendJsonToClient(user, SendProtocolData, "ChatProtocol"));
+                        }
+                    } catch (Throwable throwable) {
+                        if (throwable instanceof UserInterruptException) {
+                            log.info("正在关闭JavaIM");
+                            stop();
+                            return;
+                        }
+                        if (throwable instanceof EndOfFileException) {
+                            continue;
+                        }
+                        log.error("出现错误!", throwable);
+                    }
+                }
+            });
+            ConsoleUserRequestThread.start();
+            try {
+                log.info("正在等待数据库启动完成");
+                DatabaseStartTask.get();
+            } catch (InterruptedException | ExecutionException e) {
+                throw new RuntimeException("Thread Pool Fatal", e);
+            }
+            ThreadPool.shutdownNow();
+        }).start();
+        networkServer.start(ThreadPool, serverPort);
     }
 
     public void disconnectUser(User user) {

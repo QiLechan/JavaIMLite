@@ -42,6 +42,7 @@ import org.yuezhikong.Server.Server;
 import org.yuezhikong.Server.protocol.GeneralProtocol;
 import org.yuezhikong.Server.protocol.SystemProtocol;
 import org.yuezhikong.Server.user.CommonUser;
+import org.yuezhikong.Server.user.NetworkUser;
 import org.yuezhikong.Server.user.User;
 import org.yuezhikong.SystemConfig;
 import org.yuezhikong.utils.cert.Certificate;
@@ -222,12 +223,12 @@ public class NetworkServer {
 
     private class NetworkClient implements org.yuezhikong.Server.network.NetworkClient {
         @Getter
-        private final NettyUser user;
+        private final NetworkUser user;
 
         private final SocketAddress address;
         private final Channel channel;
 
-        private NetworkClient(NettyUser user, SocketAddress address, Channel channel) {
+        private NetworkClient(NetworkUser user, SocketAddress address, Channel channel) {
             this.user = user;
             this.address = address;
             this.channel = channel;
@@ -253,14 +254,14 @@ public class NetworkServer {
         }
     }
 
-    private static class NettyUser extends CommonUser {
+    private static class NettyUser extends CommonUser implements NetworkUser {
         private NetworkClient client;
         /**
          * 获取此用户对应的网络客户端
          *
          * @return 网络客户端
          */
-        NetworkClient getNetworkClient() {
+        public NetworkClient getNetworkClient() {
             return client;
         }
 
