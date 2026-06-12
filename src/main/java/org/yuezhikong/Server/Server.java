@@ -14,24 +14,187 @@
  * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
  * You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+
 package org.yuezhikong.Server;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonSyntaxException;
+import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.ibatis.session.SqlSession;
+import org.jline.reader.EndOfFileException;
+import org.jline.reader.LineReader;
+import org.jline.reader.LineReaderBuilder;
+import org.jline.reader.UserInterruptException;
+import org.jline.terminal.Terminal;
+import org.yuezhikong.Main;
+import org.yuezhikong.Server.network.ExitWatchdog;
 import org.yuezhikong.Server.network.NetworkServer;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import org.yuezhikong.Server.protocol.ChatProtocol;
+import org.yuezhikong.Server.protocol.GeneralProtocol;
+import org.yuezhikong.Server.protocol.SystemProtocol;
+import org.yuezhikong.Server.protocolHandler.ProtocolHandler;
+import org.yuezhikong.Server.protocolHandler.handlers.ChatProHandler;
+import org.yuezhikong.Server.protocolHandler.handlers.LoginProHandler;
+import org.yuezhikong.Server.protocolHandler.handlers.SystemProHandler;
+import org.yuezhikong.Server.user.User;
+import org.yuezhikong.Server.user.UserAuthentication;
+import org.yuezhikong.SystemConfig;
+import org.yuezhikong.utils.database.DatabaseHelper;
 
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.*;
+
+@Slf4j
 public class Server {
-    private final NetworkServer networkServer = new NetworkServer();
+    @Getter
+    private SqlSession sqlSession;
 
-    // 1. 创建一个供网络层异步初始化使用的线程池
-    private final ExecutorService startUpThreadPool = Executors.newSingleThreadExecutor();
+    @Getter
+    private ServerAPI serverAPI;
 
-    public void start(int port) {
-        networkServer.start(startUpThreadPool, port);
+    @Getter
+    private static Server Instance;
+
+    private final List<User> users = new CopyOnWriteArrayList<>();
+
+    @Getter
+    private final Gson gson = new Gson();
+
+    @Getter
+    private NetworkServer networkServer;
+
+    @Getter
+    private final ThreadGroup serverThreadGroup = Thread.currentThread().getThreadGroup();
+
+    private final Map<String, ProtocolHandler> protocolHandlerMap = new ConcurrentHashMap<>();
+
+    public void start(int serverPort){
+        networkServer =  new NetworkServer();
+        log.info("正在启动JavaIM");
+        Instance = this;
+        // 创建线程池
+        ExecutorService ThreadPool = Executors.newCachedThreadPool();
+        serverAPI = new ServerAPI(this) ;
+
+        new Thread(() -> {
+            Future<?> DatabaseStartTask = ThreadPool.submit(() -> {
+                log.info("正在启动数据库");
+                String JDBCUrl;
+                try {
+                    JDBCUrl = DatabaseHelper.InitDataBase();
+                } catch (Throwable throwable) {
+                    log.error("数据库启动失败", throwable);
+                    ThreadPool.shutdownNow();
+                    log.error("JavaIM启动失败，因为数据库出错");
+                    try {
+                        stop();
+                    } catch (NullPointerException ignored) {
+                    }
+                    log.info("JavaIM服务器已经关闭");
+                    return;
+                }
+                sqlSession = DatabaseHelper.InitMybatis(JDBCUrl);
+                log.info("数据库启动完成");
+            });
+            protocolHandlerMap.put("ChatProtocol", new ChatProHandler());
+            protocolHandlerMap.put("LoginProtocol", new LoginProHandler());
+            protocolHandlerMap.put("SystemProtocol", new SystemProHandler());
+            Thread ConsoleUserRequestThread = new Thread(() -> {
+                Terminal terminal = Main.getTerminal();
+                LineReader reader = LineReaderBuilder.builder().terminal(terminal).build();
+                while (true) {
+                    try {
+                        String line = reader.readLine(">").trim();
+                        if (line.isEmpty())
+                            continue;
+                        if (!line.startsWith("/")) {
+                            // 聊天消息
+                            log.info("[Server]: {}", line);
+                            ChatProtocol chatProtocol = new ChatProtocol();
+                            chatProtocol.setSourceUserName("Server");
+                            chatProtocol.setMessage(line);
+                            String SendProtocolData = gson.toJson(chatProtocol);
+                            serverAPI.getValidUserList(true).forEach((user) ->
+                                    serverAPI.sendJsonToClient(user, SendProtocolData, "ChatProtocol"));
+                        }
+                    } catch (Throwable throwable) {
+                        if (throwable instanceof UserInterruptException) {
+                            log.info("正在关闭JavaIM");
+                            stop();
+                            return;
+                        }
+                        if (throwable instanceof EndOfFileException) {
+                            continue;
+                        }
+                        log.error("出现错误!", throwable);
+                    }
+                }
+            });
+            ConsoleUserRequestThread.start();
+            try {
+                log.info("正在等待数据库启动完成");
+                DatabaseStartTask.get();
+            } catch (InterruptedException | ExecutionException e) {
+                throw new RuntimeException("Thread Pool Fatal", e);
+            }
+            ThreadPool.shutdownNow();
+        }).start();
+        networkServer.start(ThreadPool, serverPort);
+    }
+
+    public void disconnectUser(User user) {
+        users.remove(user);
+    }
+
+    public boolean connectUser(User user) {
+        for (User ForEachUser : users) {
+            if (ForEachUser.getUserName().equals(user.getUserName()))
+                return false;
+        }
+        return users.add(user);
+    }
+
+    public List<User> getUsers() {
+        return List.of();
     }
 
     public void stop() {
+        log.info("JavaIM服务器正在关闭...");
+        getServerAPI().sendMessageToAllClient("服务器已关闭");
+        users.clear();
+        System.gc();
         networkServer.stop();
-        startUpThreadPool.shutdown();
+        Instance = null;
+        sqlSession.close();
+        try {
+            ExitWatchdog.getInstance().onExit();
+        } catch (IllegalStateException ignored) {}
+        log.info("JavaIM服务器已关闭");
+    }
+
+    public void onReceiveMessage(User user, String msg) {
+        if (user.getUserAuthentication() == null)
+            user.setUserAuthentication(new UserAuthentication(user, this));
+        GeneralProtocol protocol;
+        try {
+            protocol = gson.fromJson(msg, GeneralProtocol.class);
+        } catch (JsonSyntaxException e) {
+            SystemProtocol systemProtocol = new SystemProtocol();
+            systemProtocol.setType("Error");
+            systemProtocol.setMessage("Protocol analysis failed");
+            serverAPI.sendJsonToClient(user, gson.toJson(systemProtocol), "SystemProtocol");
+            return;
+        }
+        if (protocol.getProtocolVersion() != SystemConfig.getProtocolVersion()) {
+            SystemProtocol systemProtocol = new SystemProtocol();
+            systemProtocol.setType("Error");
+            systemProtocol.setMessage("Protocol version not support");
+            serverAPI.sendJsonToClient(user, gson.toJson(systemProtocol), "SystemProtocol");
+            return;
+        }
+        ProtocolHandler handler = protocolHandlerMap.get(protocol.getProtocolName());
+        handler.handleProtocol(this, protocol.getProtocolData(), user);
     }
 }

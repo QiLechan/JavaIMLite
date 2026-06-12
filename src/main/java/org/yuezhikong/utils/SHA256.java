@@ -15,38 +15,42 @@
  * You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-package org.yuezhikong.Server.protocol;
+package org.yuezhikong.utils;
 
-import lombok.Data;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
-import java.util.List;
-
-/**
- * 一个用于转发文件/消息的协议
- * type:transfer
- * 转发到用户（尚未完成）
- * 此模式下，body约定List中的第一个会把发送到目标用户\，其他全部忽略
- * type:upload或download
- * 上传或下载文件文件
- * upload只会出现在客户端->服务端，download只会出现在服务端->客户端
- * 此模式下，body约定List中的第一个是文件名，第二个为文件内容，其他全部忽略
- * type:fileList
- * 文件列表
- * 此模式下，body约定List中每一个元素都是上传的文件的文件名
- */
-@Data
-public class TransferProtocol {
-    private TransferProtocolHeadBean TransferProtocolHead;
-    private List<TransferProtocolBodyBean> TransferProtocolBody;
-
-    @Data
-    public static class TransferProtocolHeadBean {
-        private String TargetUserName;
-        private String Type;
+public class SHA256 {
+    private SHA256() {
     }
 
-    @Data
-    public static class TransferProtocolBodyBean {
-        private String Data;
+    /**
+     * 执行sha256摘要
+     *
+     * @param str 原始
+     * @return sha256摘要
+     */
+    public static String sha256(String str) {
+        try {
+            // 获取SHA-256 MessageDigest实例
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+
+            // 更新要计算哈希的数据
+            byte[] encodedhash = digest.digest(str.getBytes(StandardCharsets.UTF_8));
+
+            // 完成哈希计算后，将结果转换为16进制字符串
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : encodedhash) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) hexString.append('0');
+                hexString.append(hex);
+            }
+
+            return hexString.toString();
+
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA256 Provider Not Found!", e); // SHA-256应该总是可用的
+        }
     }
 }

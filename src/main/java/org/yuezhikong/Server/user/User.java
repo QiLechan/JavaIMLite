@@ -15,42 +15,70 @@
  * You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-package org.yuezhikong.utils.cert;
+package org.yuezhikong.Server.user;
 
-import lombok.Data;
-import org.bouncycastle.asn1.x500.X500Name;
+public interface User {
 
-import java.math.BigInteger;
-import java.util.Date;
+    /**
+     * 获取用户名
+     *
+     * @return 用户名
+     */
+    String getUserName();
 
-@Data
-public class CertificateInfo {
     /**
-     * 证书序列号
+     * 获取用户登录状态
+     *
+     * @return {@code true} 已登录, {@code false} 未登录
      */
-    private BigInteger serial;
+    boolean isUserLogged();
+
     /**
-     * 颁发者
+     * 使用户离线（踢出用户）
      */
-    private X500Name issuer;
+    User disconnect();
+
     /**
-     * 主体
+     * 获取此用户是/否是服务端虚拟用户
+     *
+     * @return {@code true} 是服务端虚拟账户 {@code false} 不是服务端虚拟账户
      */
-    private X500Name subject;
+    boolean isServer();
+
     /**
-     * 颁发时间
+     * 设置用户Authentication实例
+     *
+     * @param Authentication 实例
      */
-    private Date notBefore;
+    User setUserAuthentication(UserAuthentication Authentication);
+
     /**
-     * 到期时间
+     * 获取用户Authentication实例
+     *
+     * @return Authentication实例
      */
-    private Date notAfter;
+    UserAuthentication getUserAuthentication();
+
     /**
-     * 加密算法
+     * 设置用户数据库信息
+     *
+     * @param userInformation 用户数据库信息
      */
-    private String keyAlgorithm;
+    void setUserInformation(userInformation userInformation);
+
     /**
-     * 签名算法
+     * 获取用户数据库信息
+     *
+     * @return 用户数据库信息
+     * @apiNote 操作后请使用setUserInformation重新写入，操作后只有通过此方法才会持久化保存
      */
-    private String signAlgorithm;
+    userInformation getUserInformation();
+
+    /**
+     * 当用户登录时
+     *
+     * @param UserName 用户名
+     * @apiNote 在用户登录时，请调用此方法
+     */
+    User onUserLogin(String UserName);
 }

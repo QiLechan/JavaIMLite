@@ -17,6 +17,7 @@
 
 package org.yuezhikong.Server.network;
 
+import com.google.gson.Gson;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -31,10 +32,18 @@ import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.ssl.ClientAuth;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslProvider;
+import io.netty.util.ReferenceCountUtil;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.jetbrains.annotations.Range;
+import org.yuezhikong.Server.Server;
+import org.yuezhikong.Server.protocol.GeneralProtocol;
+import org.yuezhikong.Server.protocol.SystemProtocol;
+import org.yuezhikong.Server.user.CommonUser;
+import org.yuezhikong.Server.user.NetworkUser;
+import org.yuezhikong.Server.user.User;
 import org.yuezhikong.SystemConfig;
 import org.yuezhikong.utils.cert.Certificate;
 import org.yuezhikong.utils.cert.CertificateInfo;
@@ -43,13 +52,12 @@ import javax.net.ssl.SSLException;
 import java.io.File;
 import java.io.IOException;
 import java.math.BigInteger;
+import java.net.SocketAddress;
 import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
-import java.util.Base64;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -64,16 +72,15 @@ public class NetworkServer {
      */
     private EventLoopGroup parentGroup, workerGroup;
     private DefaultEventLoopGroup RecvMessageThreadPool;
+    private final List<NetworkClient> clientList = new ArrayList<>();
     private ChannelFuture future;
     private PrivateKey ServerSSLPrivateKey;
     private X509Certificate ServerSSLCertificate;
     private Channel serverChannel;
-    private boolean isRunning = false;
 
     private CertificateInfo setCertificateInfo(CertificateInfo info) {
-        Certificate cert = new Certificate();
         long currentTimeMillis = System.currentTimeMillis();
-        Certificate.SubjectBuilder builder = cert.new SubjectBuilder();
+        Certificate.SubjectBuilder builder = new Certificate.SubjectBuilder();
         X500Name subject = builder
                 .setCn(SystemConfig.getServerName())
                 .setL("Shanghai")
@@ -214,11 +221,125 @@ public class NetworkServer {
         }
     }
 
-    private class ServerHandler extends ChannelInboundHandlerAdapter {
+    private class NetworkClient implements org.yuezhikong.Server.network.NetworkClient {
+        @Getter
+        private final NetworkUser user;
 
+        private final SocketAddress address;
+        private final Channel channel;
+
+        private NetworkClient(NetworkUser user, SocketAddress address, Channel channel) {
+            this.user = user;
+            this.address = address;
+            this.channel = channel;
+        }
+
+        @Override
+        public SocketAddress getSocketAddress() {
+            return address;
+        }
+
+        public void send(String message) throws IllegalStateException {
+            //checks.checkState(!isOnline(), "This user is now offline!");
+            channel.writeAndFlush(message);
+        }
+
+        public boolean isOnline() {
+            return clientList.contains(this);
+        }
+
+        public void disconnect() {
+            if (isOnline())
+                channel.disconnect();
+        }
+    }
+
+    private static class NettyUser extends CommonUser implements NetworkUser {
+        private NetworkClient client;
+        /**
+         * 获取此用户对应的网络客户端
+         *
+         * @return 网络客户端
+         */
+        public NetworkClient getNetworkClient() {
+            return client;
+        }
+
+        @Override
+        public boolean isServer() {
+            return false;
+        }
+
+        private void setNetworkClient(NetworkClient client) {
+            this.client = client;
+        }
+
+        @Override
+        public User onUserLogin(String UserName) {
+            log.info(String.format("用户：%s(IP地址：%s) 登录完成", UserName, getNetworkClient().getSocketAddress()));
+            return super.onUserLogin(UserName);
+        }
+    }
+    private class ServerHandler extends ChannelInboundHandlerAdapter {
+        private final HashMap<Channel, NetworkClient> clientNetworkClientPair = new HashMap<>();
+        private final Gson gson = new Gson();
+
+        @Override
+        public void channelActive(ChannelHandlerContext ctx) {
+            log.info("检测到新客户端连接...");
+            log.info("IP地址：{}", ctx.channel().remoteAddress());
+            NettyUser nettyUser = new NettyUser();
+            if (!Server.getInstance().connectUser(nettyUser)) {
+                ctx.channel().close();
+                return;
+            }
+            NetworkClient client = new NetworkClient(nettyUser, ctx.channel().remoteAddress(), ctx.channel());
+            nettyUser.setNetworkClient(client);
+            clientNetworkClientPair.put(ctx.channel(), client);
+            clientList.add(client);
+        }
+
+        @Override
+        public void channelInactive(ChannelHandlerContext ctx) {
+            log.info("客户端断开连接...");
+            NetworkClient Client = clientNetworkClientPair.remove(ctx.channel());
+            if (Client != null) {
+                Server.getInstance().disconnectUser(Client.getUser());
+                clientList.remove(Client);
+            }
+        }
+
+        @Override
+        public void channelRead(ChannelHandlerContext ctx, Object msg) {
+            if (!(msg instanceof String Msg)) {
+                log.info(String.format("客户端：%s 发送了非String消息：%s", ctx.channel().remoteAddress(), msg.toString()));
+                return;
+            }
+            if (Msg.isEmpty()) {
+                log.info(String.format("客户端：%s 发送了空消息", ctx.channel().remoteAddress()));
+                SystemProtocol systemProtocol = new SystemProtocol();
+                systemProtocol.setType("Error");
+                systemProtocol.setMessage("Empty Packet");
+                GeneralProtocol protocol = new GeneralProtocol();
+                protocol.setProtocolVersion(SystemConfig.getProtocolVersion());
+                protocol.setProtocolName("SystemProtocol");
+                protocol.setProtocolData(gson.toJson(systemProtocol));
+                ctx.writeAndFlush(gson.toJson(protocol));
+                return;
+            }
+            NetworkClient thisClient = clientNetworkClientPair.get(ctx.channel());
+            Server.getInstance().onReceiveMessage(thisClient.getUser(), Msg);
+            ReferenceCountUtil.release(msg);
+        }
     }
 
     public void stop() {
+        log.info("JavaIM 网络层正在关闭...");
+        future.channel().close();
+        parentGroup.shutdownGracefully();
+        workerGroup.shutdownGracefully();
+        RecvMessageThreadPool.shutdownGracefully();
+        log.info("JavaIM 网络层关闭完成");
     }
 }
 

@@ -26,6 +26,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.bridge.SLF4JBridgeHandler;
 import org.yuezhikong.Server.Server;
+import org.yuezhikong.Server.network.ExitWatchdog;
 import org.yuezhikong.utils.ConfigFileManager;
 
 import java.io.File;
@@ -87,6 +88,7 @@ public class Main {
                 @Override
                 public void run() {
                     new Server().start(serverPort);
+                    ExitWatchdog.initInstance();
                 }
             };
             t.start();
