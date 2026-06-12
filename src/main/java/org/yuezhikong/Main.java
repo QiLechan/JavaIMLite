@@ -109,7 +109,15 @@ public class Main {
                 Thread t = new Thread("ClientThread") {
                     @Override
                     public void run() {
-                        new ClientMain().start();
+                        log.info("请输入服务器地址");
+                        String serverAddress = reader.readLine("服务器地址>");
+                        log.info("请输入服务器端口");
+                        int serverPort = Integer.parseInt(reader.readLine("服务器端口>"));
+                        log.info("请输入用户名");
+                        String userName = reader.readLine("用户名>");
+                        log.info("请输入密码");
+                        String password = reader.readLine("密码>");
+                        new ClientMain().start(serverAddress, serverPort, userName, password);
                     }
                 };
                 t.start();
