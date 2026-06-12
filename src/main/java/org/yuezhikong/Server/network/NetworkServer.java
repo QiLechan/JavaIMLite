@@ -334,6 +334,12 @@ public class NetworkServer {
     }
 
     public void stop() {
+        log.info("JavaIM 网络层正在关闭...");
+        future.channel().close();
+        parentGroup.shutdownGracefully();
+        workerGroup.shutdownGracefully();
+        RecvMessageThreadPool.shutdownGracefully();
+        log.info("JavaIM 网络层关闭完成");
     }
 }
 

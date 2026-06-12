@@ -28,6 +28,7 @@ import org.jline.reader.LineReaderBuilder;
 import org.jline.reader.UserInterruptException;
 import org.jline.terminal.Terminal;
 import org.yuezhikong.Main;
+import org.yuezhikong.Server.network.ExitWatchdog;
 import org.yuezhikong.Server.network.NetworkServer;
 import org.yuezhikong.Server.protocol.ChatProtocol;
 import org.yuezhikong.Server.protocol.GeneralProtocol;
@@ -160,7 +161,17 @@ public class Server {
     }
 
     public void stop() {
-
+        log.info("JavaIM服务器正在关闭...");
+        getServerAPI().sendMessageToAllClient("服务器已关闭");
+        users.clear();
+        System.gc();
+        networkServer.stop();
+        Instance = null;
+        sqlSession.close();
+        try {
+            ExitWatchdog.getInstance().onExit();
+        } catch (IllegalStateException ignored) {}
+        log.info("JavaIM服务器已关闭");
     }
 
     public void onReceiveMessage(User user, String msg) {

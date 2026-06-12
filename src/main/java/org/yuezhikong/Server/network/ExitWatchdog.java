@@ -1,10 +1,7 @@
 package org.yuezhikong.Server.network;
 
 import lombok.Getter;
-import org.yuezhikong.Server.Server;
 
-import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -12,16 +9,7 @@ import java.util.concurrent.locks.ReentrantLock;
 public class ExitWatchdog {
     @Getter
     private static ExitWatchdog instance;
-
-    /**
-     * 队列数据
-     * @param networkServer 网络服务器实例
-     * @param callback      回调函数
-     */
-    private record QueueData (NetworkServer networkServer, Runnable callback) {}
-    private final List<QueueData> exitQueue = new CopyOnWriteArrayList<>();
-    private static final AtomicBoolean idle = new AtomicBoolean(true);
-    private static final AtomicBoolean JavaIMExited = new AtomicBoolean(false);
+    private static final AtomicBoolean Exited = new AtomicBoolean(false);
     private static final Lock lock = new ReentrantLock();
 
     /**
@@ -34,26 +22,20 @@ public class ExitWatchdog {
      */
     public static void initInstance() {
         instance = new ExitWatchdog();
-        instance.processQueue();
+        instance.Daemon();
     }
 
     /**
-     * 处理请求队列
+     * 守护进程
      */
-    private void processQueue() {
+    private void Daemon() {
         while (true) {
             lock.lock();
-            QueueData data;
             try {
-                idle.set(false);
-                if (JavaIMExited.get()) {
+                if (Exited.get()) {
                     return;
                 }
-
-                data = exitQueue.get(0);
-                exitQueue.remove(0);
             } catch (Throwable t) {
-                idle.set(true);
                 synchronized (this) {
                     lock.unlock();
                     try {
@@ -63,40 +45,17 @@ public class ExitWatchdog {
                 continue;
             }
             lock.unlock();
-//            for (NetworkClient client : data.networkServer.getOnlineClients()) {
-//                client.getUser().disconnect();
-            Server.getInstance().stop();
         }
-    }
-
-    /**
-     * 添加退出任务
-     * @param callback 回调函数
-     * @param server 网络服务器实例
-     */
-    public void addExitTask(Runnable callback, NetworkServer server) {
-        lock.lock();
-        exitQueue.add(new QueueData(server, callback));
-        if (idle.get()) {
-            idle.set(false);
-            synchronized (this) {
-                notifyAll();
-            }
-        }
-        lock.unlock();
     }
 
     /**
      * 当JavaIM退出时调用
      */
-    public void onJavaIMExit() {
+    public void onExit() {
         lock.lock();
-        JavaIMExited.set(true);
-        if (idle.get()) {
-            idle.set(false);
-            synchronized (this) {
-                notifyAll();
-            }
+        Exited.set(true);
+        synchronized (this) {
+            notifyAll();
         }
         lock.unlock();
     }
