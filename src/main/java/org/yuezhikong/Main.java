@@ -17,6 +17,7 @@
 package org.yuezhikong;
 
 import lombok.Getter;
+import org.apache.commons.io.FileUtils;
 import org.jline.jansi.AnsiConsole;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
@@ -31,9 +32,15 @@ import org.yuezhikong.Server.network.ExitWatchdog;
 import org.yuezhikong.utils.ConfigFileManager;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.security.NoSuchProviderException;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Scanner;
 import java.util.logging.Level;
 
 public class Main {
@@ -117,7 +124,16 @@ public class Main {
                         String userName = reader.readLine("用户名>");
                         log.info("请输入密码");
                         String password = reader.readLine("密码>");
-                        new ClientMain().start(serverAddress, serverPort, userName, password);
+                        System.out.print("请输入服务器CA证书路径：");
+                        X509Certificate ServerCARootCert;
+                        try (FileInputStream stream = new FileInputStream(reader.readLine(">"))){
+                            CertificateFactory factory = CertificateFactory.getInstance("X.509","BC");
+                            ServerCARootCert = (X509Certificate) factory.generateCertificate(stream);
+                        } catch (CertificateException | NoSuchProviderException | IOException e) {
+                            throw new RuntimeException("Failed to open X.509 CA Cert & X.509 RSA Private key, Permission denied?",e);
+                        }
+
+                        new ClientMain().start(serverAddress, serverPort, userName, password, ServerCARootCert);
                     }
                 };
                 t.start();
