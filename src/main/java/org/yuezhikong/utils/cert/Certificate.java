@@ -137,27 +137,27 @@ public class Certificate {
         }
     }
 
-    @Data
-    public class KeyAndCertificate {
-        /**
-         * 私钥
-         */
-        private PrivateKey privateKey;
-        /**
-         * 公钥
-         */
-        private PublicKey publicKey;
-        /**
-         * 证书
-         */
-        private X509Certificate certificate;
-
-        public KeyAndCertificate(PrivateKey privateKey, PublicKey publicKey, X509Certificate certificate) {
-            this.privateKey = privateKey;
-            this.publicKey = publicKey;
-            this.certificate = certificate;
-        }
-    }
+//    @Data
+//    public class KeyAndCertificate {
+//        /**
+//         * 私钥
+//         */
+//        private PrivateKey privateKey;
+//        /**
+//         * 公钥
+//         */
+//        private PublicKey publicKey;
+//        /**
+//         * 证书
+//         */
+//        private X509Certificate certificate;
+//
+//        public KeyAndCertificate(PrivateKey privateKey, PublicKey publicKey, X509Certificate certificate) {
+//            this.privateKey = privateKey;
+//            this.publicKey = publicKey;
+//            this.certificate = certificate;
+//        }
+//    }
 
     public record keyAndCertificate(
             PrivateKey privateKey,
