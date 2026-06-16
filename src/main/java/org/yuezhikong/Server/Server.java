@@ -57,6 +57,7 @@ public class Server {
     @Getter
     private static Server Instance;
 
+    @Getter
     private final List<User> users = new CopyOnWriteArrayList<>();
 
     @Getter
@@ -154,10 +155,6 @@ public class Server {
                 return false;
         }
         return users.add(user);
-    }
-
-    public List<User> getUsers() {
-        return List.of();
     }
 
     public void stop() {

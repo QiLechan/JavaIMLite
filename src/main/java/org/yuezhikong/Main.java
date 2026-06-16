@@ -17,6 +17,7 @@
 package org.yuezhikong;
 
 import lombok.Getter;
+import org.apache.commons.io.FileUtils;
 import org.jline.jansi.AnsiConsole;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
@@ -25,13 +26,21 @@ import org.jline.terminal.TerminalBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.bridge.SLF4JBridgeHandler;
+import org.yuezhikong.Client.ClientMain;
 import org.yuezhikong.Server.Server;
 import org.yuezhikong.Server.network.ExitWatchdog;
 import org.yuezhikong.utils.ConfigFileManager;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.security.NoSuchProviderException;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.util.Locale;
+import java.util.Objects;
+import java.util.Scanner;
 import java.util.logging.Level;
 
 public class Main {
@@ -72,29 +81,70 @@ public class Main {
         LineReader reader = LineReaderBuilder.builder().terminal(terminal).build();
 
         log.info("欢迎使用JavaIm!");
-        log.info("正在启动服务端...");
-        // 服务端配置文件初始化
-        if (!(new File("server.properties").exists())) {
-            log.info("目录下没有检测到服务端配置文件，进入配置引导");
-            ConfigFileManager.createServerConfig();
-            firstStart(reader);
-        } else
-            ConfigFileManager.reloadServerConfig();
-        serverPort = Integer.parseInt(ConfigFileManager.getServerConfig("serverPort", "8080"));
-        // 服务端线程组，便于统一停止
-        ThreadGroup serverGroup = new ThreadGroup(Thread.currentThread().getThreadGroup(), "serverGroup");
-        try {
-            Thread t = new Thread(serverGroup, "ServerThread") {
-                @Override
-                public void run() {
-                    new Server().start(serverPort);
-                    ExitWatchdog.initInstance();
-                }
-            };
-            t.start();
-            t.join();
-        } catch (InterruptedException e) {
-            log.error("出现错误!", e);
+        log.info("输入 1 启动服务端，输入 2 启动客户端");
+        int choice = Integer.parseInt(reader.readLine(">"));
+        if (choice == 1){
+
+            log.info("正在启动服务端...");
+            // 服务端配置文件初始化
+            if (!(new File("server.properties").exists())) {
+                log.info("目录下没有检测到服务端配置文件，进入配置引导");
+                ConfigFileManager.createServerConfig();
+                firstStart(reader);
+            } else
+                ConfigFileManager.reloadServerConfig();
+            serverPort = Integer.parseInt(ConfigFileManager.getServerConfig("serverPort", "8080"));
+            // 服务端线程组，便于统一停止
+            ThreadGroup serverGroup = new ThreadGroup(Thread.currentThread().getThreadGroup(), "serverGroup");
+            try {
+                Thread t = new Thread(serverGroup, "ServerThread") {
+                    @Override
+                    public void run() {
+                        new Server().start(serverPort);
+                        ExitWatchdog.initInstance();
+                    }
+                };
+                t.start();
+                t.join();
+            } catch (InterruptedException e) {
+                log.error("出现错误!", e);
+            }
+        }
+        else if (choice == 2){
+            log.info("正在启动客户端...");
+            try {
+                Thread t = new Thread("ClientThread") {
+                    @Override
+                    public void run() {
+                        log.info("请输入服务器地址");
+                        String serverAddress = reader.readLine("服务器地址>");
+                        log.info("请输入服务器端口");
+                        int serverPort = Integer.parseInt(reader.readLine("服务器端口>"));
+                        log.info("请输入用户名");
+                        String userName = reader.readLine("用户名>");
+                        log.info("请输入密码");
+                        String password = reader.readLine("密码>");
+                        System.out.print("请输入服务器CA证书路径：");
+                        X509Certificate ServerCARootCert;
+                        try (FileInputStream stream = new FileInputStream(reader.readLine(">"))){
+                            CertificateFactory factory = CertificateFactory.getInstance("X.509","BC");
+                            ServerCARootCert = (X509Certificate) factory.generateCertificate(stream);
+                        } catch (CertificateException | NoSuchProviderException | IOException e) {
+                            throw new RuntimeException("Failed to open X.509 CA Cert & X.509 RSA Private key, Permission denied?",e);
+                        }
+
+                        new ClientMain().start(serverAddress, serverPort, userName, password, ServerCARootCert);
+                    }
+                };
+                t.start();
+                t.join();
+            } catch (InterruptedException e) {
+                log.error("出现错误!", e);
+            }
+        }
+        else {
+            log.error("输入错误!");
+            System.exit(1);
         }
         System.exit(0);
     }

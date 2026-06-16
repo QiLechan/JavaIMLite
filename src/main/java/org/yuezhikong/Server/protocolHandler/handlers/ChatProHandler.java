@@ -10,8 +10,7 @@ import org.yuezhikong.Server.user.User;
 
 public class ChatProHandler implements ProtocolHandler {
     private static final Logger log = LoggerFactory.getLogger(ChatProHandler.class);
-    private static final int MaxMessageLength = 500;
-    private static final int MinMessageLength = 1;
+
 
     public void handleProtocol(@NotNull Server server, @NotNull String protocolData, User user) {
         if (user.isUserLogged()){
