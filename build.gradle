@@ -1,5 +1,6 @@
 plugins {
     id 'org.jetbrains.kotlin.jvm' version '2.3.21'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
 }
 
 group = 'org.yuezhikong'
@@ -49,6 +50,31 @@ dependencies {
 
 kotlin {
     jvmToolchain(17)
+}
+
+jar {
+    manifest {
+        attributes(
+            'Main-Class': 'org.yuezhikong.Main',
+            'Implementation-Title': 'JavaIM',
+            'Implementation-Vendor': 'QiLechan',
+            'Multi-Release': 'true'
+        )
+    }
+}
+
+shadowJar {
+    archiveBaseName.set('JavaIMLite')
+    archiveClassifier.set('')
+    archiveVersion.set('1.0-SNAPSHOT')
+    manifest {
+        attributes(
+            'Main-Class': 'org.yuezhikong.Main',
+            'Implementation-Title': 'JavaIM',
+            'Implementation-Vendor': 'QiLechan',
+            'Multi-Release': 'true'
+        )
+    }
 }
 
 test {
