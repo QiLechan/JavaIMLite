@@ -117,7 +117,7 @@ public class ServerAPI {
     public @NotNull User getUserByUserName(@NotNull @Nls String UserName) throws AccountNotFoundException {
         List<User> ValidClientList = getValidUserList(true);
         for (User User : ValidClientList) {
-            if (User.getUserName().equals(UserName)) {
+            if (User.getUserName() != null && User.getUserName().equals(UserName)) {
                 return User;
             }
         }

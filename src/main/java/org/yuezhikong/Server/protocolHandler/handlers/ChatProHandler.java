@@ -13,7 +13,7 @@ public class ChatProHandler implements ProtocolHandler {
 
 
     public void handleProtocol(@NotNull Server server, @NotNull String protocolData, User user) {
-        if (user.isUserLogged()){
+        if (!user.isUserLogged()){
             server.getServerAPI().sendMessageToUser(user, "请先登录喵~");
             return;
         }

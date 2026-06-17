@@ -265,6 +265,9 @@ public class NetworkServer {
 
         log.info("正在启动Netty");
         try {
+            // 等待证书生成完成
+            CertTask.get();
+            
             ServerBootstrap bs = new ServerBootstrap();
             bs.group(parentGroup, workerGroup)
                     .channel(NioServerSocketChannel.class)
@@ -273,7 +276,6 @@ public class NetworkServer {
                         public void initChannel(SocketChannel channel) {
                             ChannelPipeline pipeline = channel.pipeline();
                             try {
-                                CertTask.get();
                                 pipeline.addLast(
                                         SslContextBuilder.forServer(ServerSSLPrivateKey, ServerSSLCertificate)
                                                 .sslProvider(SslProvider.JDK)
@@ -281,7 +283,7 @@ public class NetworkServer {
                                                 .build()
                                                 .newHandler(channel.alloc())
                                 );
-                            } catch (SSLException | InterruptedException | ExecutionException e) {
+                            } catch (SSLException e) {
                                 throw new RuntimeException("SSL Context Generate Failed!", e);
                             }
                             pipeline.addLast(new LoggingHandler(LogLevel.DEBUG));
@@ -304,6 +306,9 @@ public class NetworkServer {
             }
         } catch (InterruptedException e) {
             log.error("出现错误!", e);
+        } catch (ExecutionException e) {
+            log.error("证书生成失败!", e);
+            throw new RuntimeException("Certificate Generation Failed!", e);
         }
     }
 
@@ -375,7 +380,9 @@ public class NetworkServer {
             log.info("检测到新客户端连接...");
             log.info("IP地址：{}", ctx.channel().remoteAddress());
             NettyUser nettyUser = new NettyUser();
+            // 先添加用户到列表，用户名验证延迟到登录时进行
             if (!Server.getInstance().connectUser(nettyUser)) {
+                log.warn("用户连接失败：用户名重复或已达最大连接数");
                 ctx.channel().close();
                 return;
             }
