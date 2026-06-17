@@ -169,6 +169,7 @@ public class ServerUI {
         serverThread = new Thread(() -> {
             try {
                 server = new Server();
+                server.setGuiMode(true);
                 server.start(port);
                 // start() 中 networkServer.start() 是阻塞的
                 // 当服务器停止后才会返回

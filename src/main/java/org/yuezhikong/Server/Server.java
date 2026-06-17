@@ -71,6 +71,21 @@ public class Server {
 
     private final Map<String, ProtocolHandler> protocolHandlerMap = new ConcurrentHashMap<>();
 
+    /**
+     * GUI 模式标志。为 true 时跳过控制台输入线程，
+     * 避免在无终端环境下 JLine 报 "句柄无效" 错误。
+     */
+    private boolean guiMode = false;
+
+    /**
+     * 设置 GUI 模式。必须在调用 {@link #start(int)} 之前设置。
+     *
+     * @param guiMode true 表示 GUI 模式（不启动控制台输入线程）
+     */
+    public void setGuiMode(boolean guiMode) {
+        this.guiMode = guiMode;
+    }
+
     public void start(int serverPort){
         networkServer =  new NetworkServer();
         log.info("正在启动JavaIM");
@@ -102,6 +117,8 @@ public class Server {
             protocolHandlerMap.put("ChatProtocol", new ChatProHandler());
             protocolHandlerMap.put("LoginProtocol", new LoginProHandler());
             protocolHandlerMap.put("SystemProtocol", new SystemProHandler());
+            // GUI 模式下不启动控制台输入线程，避免 JLine 在无终端环境下报错
+            if (!guiMode) {
             Thread ConsoleUserRequestThread = new Thread(() -> {
                 Terminal terminal = Main.getTerminal();
                 LineReader reader = LineReaderBuilder.builder().terminal(terminal).build();
@@ -134,6 +151,7 @@ public class Server {
                 }
             });
             ConsoleUserRequestThread.start();
+            } // end if (!guiMode)
             try {
                 log.info("正在等待数据库启动完成");
                 DatabaseStartTask.get();
