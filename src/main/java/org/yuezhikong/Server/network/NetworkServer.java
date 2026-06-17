@@ -37,6 +37,16 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.asn1.x500.X500NameBuilder;
+import org.bouncycastle.asn1.x500.style.BCStyle;
+import org.bouncycastle.asn1.x509.*;
+import org.bouncycastle.cert.CertIOException;
+import org.bouncycastle.cert.X509v3CertificateBuilder;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateHolder;
+import org.bouncycastle.operator.ContentSigner;
+import org.bouncycastle.operator.OperatorCreationException;
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.jetbrains.annotations.Range;
 import org.yuezhikong.Server.Server;
 import org.yuezhikong.Server.protocol.GeneralProtocol;
@@ -50,13 +60,18 @@ import org.yuezhikong.utils.cert.CertificateInfo;
 
 import javax.net.ssl.SSLException;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.net.SocketAddress;
 import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
-import java.security.PrivateKey;
+import java.security.*;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -118,30 +133,101 @@ public class NetworkServer {
     }
 
     private void X509CertificateGenerate() throws Throwable {
-        CertificateInfo certinfo = new CertificateInfo();
-        certinfo = setCertificateInfo(certinfo);
-        Certificate.keyAndCertificate kc = generateCertificate(certinfo);
-        byte[] privateKeyEncode = kc.privateKey().getEncoded();
-        String privateKeyContent =
-                Base64.getEncoder().encodeToString(privateKeyEncode);
-        try {
-            FileUtils.writeStringToFile(new File("./ServerEncryption/private.key"), privateKeyContent, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to Write private key.", e);
+        if (!(new File("./ServerEncryption/cert.crt").exists() &&
+                new File("./ServerEncryption/private.key").exists())) {
+            CertificateInfo certinfo = new CertificateInfo();
+            certinfo = setCertificateInfo(certinfo);
+            Certificate.keyAndCertificate kc = generateCertificate(certinfo);
+            byte[] privateKeyEncode = kc.privateKey().getEncoded();
+            String privateKeyContent =
+                    Base64.getEncoder().encodeToString(privateKeyEncode);
+            try {
+                FileUtils.writeStringToFile(new File("./ServerEncryption/private.key"), privateKeyContent, StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to Write private key.", e);
+            }
+            byte[] certificateEncode = kc.certificate().getEncoded();
+            String certificateContent =
+                    "-----BEGIN CERTIFICATE-----\n" +
+                            lf(Base64.getEncoder().encodeToString(certificateEncode), 64) +
+                            "-----END CERTIFICATE-----";
+            try {
+                FileUtils.writeStringToFile(new File("./ServerEncryption/cert.crt"), certificateContent, StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to write cert to file.", e);
+            }
+            log.info("CA证书创建完成");
+            log.info("请分发ServerEncryption文件夹中的cert.crt到各个客户端");
+            log.info("请注意，ServerEncryption文件夹中的“private.key”如果泄露，您与客户端的连接将可能被劫持");
         }
-        byte[] certificateEncode = kc.certificate().getEncoded();
-        String certificateContent =
-                "-----BEGIN CERTIFICATE-----\n" +
-                        lf(Base64.getEncoder().encodeToString(certificateEncode), 64) +
-                        "-----END CERTIFICATE-----";
-        try {
-            FileUtils.writeStringToFile(new File("./ServerEncryption/cert.crt"), certificateContent, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to write cert to file.", e);
+        log.info("正在使用 X.509 CA 证书 签发新的 X.509 临时 SSL 加密证书");
+        // 加载CA证书
+        org.bouncycastle.asn1.x509.Certificate caCert;
+        PrivateKey caPrivateKey;
+        try (FileInputStream stream = new FileInputStream("./ServerEncryption/cert.crt")) {
+            CertificateFactory factory = CertificateFactory.getInstance("X.509", "BC");
+            caCert = new JcaX509CertificateHolder((X509Certificate) factory.generateCertificate(stream)).toASN1Structure();
+            caPrivateKey = KeyFactory.getInstance("RSA").generatePrivate(
+                    new PKCS8EncodedKeySpec(
+                            Base64.getDecoder().decode(
+                                    FileUtils.readFileToString(new File("./ServerEncryption/private.key"), StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8)
+                            )
+                    )
+            );
+        } catch (CertificateException | NoSuchProviderException | NoSuchAlgorithmException | InvalidKeySpecException |
+                 IOException e) {
+            throw new RuntimeException("Failed to open X.509 CA Cert & X.509 RSA Private key, Permission denied?", e);
         }
-        log.info("CA证书创建完成");
-        log.info("请分发ServerEncryption文件夹中的cert.crt到各个客户端");
-        log.info("请注意，ServerEncryption文件夹中的“private.key”如果泄露，您与客户端的连接将可能被劫持");
+
+        // 创建终端主体
+        X500Name subject = new X500NameBuilder()
+                .addRDN(BCStyle.C, "CN")//证书国家代号(Country Name)
+                .addRDN(BCStyle.O, "JavaIM-Server")//证书组织名(Organization Name)
+                .addRDN(BCStyle.OU, SystemConfig.getServerName())//证书组织单位名(Organization Unit Name)
+                .addRDN(BCStyle.CN, "JavaIM Server Encryption")//证书通用名(Common Name)
+                .addRDN(BCStyle.ST, "Shanghai")//证书州或省份(State or Province Name)
+                .addRDN(BCStyle.L, "Shanghai")//证书所属城市名(Locality Name)
+                .build();
+
+        // 创建密钥对
+        KeyPair pair;
+        try {
+            KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+            generator.initialize(2048);
+            pair = generator.generateKeyPair();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("Failed to generate keypair!", e);
+        }
+        PublicKey publicKey = pair.getPublic();
+        ServerSSLPrivateKey = pair.getPrivate();
+
+        // 签署并生成证书
+        long currentTimeMillis = System.currentTimeMillis();
+        ContentSigner signer;
+        try {
+            signer = new JcaContentSignerBuilder("SHA256WITHRSA").build(caPrivateKey);
+        } catch (OperatorCreationException e) {
+            throw new RuntimeException("Generate Content Signer Failed!", e);
+        }
+        try {
+            ServerSSLCertificate = new JcaX509CertificateConverter().getCertificate(
+                    new X509v3CertificateBuilder(
+                            caCert.getSubject(),//证书签发者
+                            BigInteger.valueOf(currentTimeMillis),//证书序列号
+                            new Date(currentTimeMillis),//证书生效时间
+                            new Date(currentTimeMillis + TimeUnit.DAYS.toMillis(90)),//证书失效时间
+                            subject,//证书主体
+                            SubjectPublicKeyInfo.getInstance(publicKey.getEncoded())//证书主体公钥
+                    )
+                            .addExtension(Extension.keyUsage, true, new KeyUsage(KeyUsage.digitalSignature | KeyUsage.keyEncipherment))
+                            .addExtension(Extension.extendedKeyUsage, false, new ExtendedKeyUsage(new KeyPurposeId[]{KeyPurposeId.id_kp_serverAuth, KeyPurposeId.id_kp_clientAuth}))
+                            .addExtension(Extension.basicConstraints, true, new BasicConstraints(false))
+                            .build(signer)
+            );
+        } catch (CertIOException | CertificateException e) {
+            throw new RuntimeException("Generate SSL Cert Failed!", e);
+        }
+        log.info("X.509 SSL 证书已经签发完成");
     }
     public void start(ExecutorService ThreadPool, @Range(from = 1, to = 65535) int serverPort){
         // Java 16 新特性

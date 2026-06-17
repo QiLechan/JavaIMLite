@@ -195,19 +195,18 @@ public class Certificate {
     }
 
     public static X509Certificate generateSSLCertificate(CertificateInfo info, keyAndCertificate keyAndCertificate) throws Throwable{
-        org.bouncycastle.asn1.x509.Certificate certificate = keyAndCertificate.certificate();
         PrivateKey privateKey = keyAndCertificate.privateKey();
-        CertificateFactory factory = CertificateFactory.getInstance("X.509", "BC");
-        KeyPair keypair;
-        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-        generator.initialize(2048);
-        keypair = generator.generateKeyPair();
-        PublicKey publicKey = keypair.getPublic();
-        PrivateKey privateKey1 = keypair.getPrivate();
+        
+        // 从BC证书中提取公钥
+        org.bouncycastle.asn1.x509.Certificate bcCert = keyAndCertificate.certificate();
+        SubjectPublicKeyInfo subjectPublicKeyInfo = bcCert.getSubjectPublicKeyInfo();
+        PublicKey publicKey = new JcaX509CertificateConverter()
+                .getCertificate(new X509CertificateHolder(bcCert))
+                .getPublicKey();
+        
         long currentTimeMillis = System.currentTimeMillis();
 
         X500Name subject = info.getSubject();
-        SubjectPublicKeyInfo subjectPublicKeyInfo = SubjectPublicKeyInfo.getInstance(publicKey.getEncoded());
         JcaContentSignerBuilder jcaContentSignerBuilder = new JcaContentSignerBuilder(info.getSignAlgorithm());
         // 创建签名
         ContentSigner contentSigner = jcaContentSignerBuilder.build(privateKey);
@@ -219,7 +218,7 @@ public class Certificate {
                         new Date(currentTimeMillis),//证书生效时间
                         new Date(currentTimeMillis + TimeUnit.DAYS.toMillis(90)),//证书失效时间
                         subject, // 证书主体
-                        SubjectPublicKeyInfo.getInstance(publicKey.getEncoded()) // 设置证书的公钥信息
+                        subjectPublicKeyInfo // 使用原始证书的公钥信息
                 )
                         .addExtension(Extension.keyUsage, true, new KeyUsage(KeyUsage.digitalSignature | KeyUsage.keyEncipherment))
                         .addExtension(Extension.extendedKeyUsage, false, new ExtendedKeyUsage(new KeyPurposeId[]{KeyPurposeId.id_kp_serverAuth, KeyPurposeId.id_kp_clientAuth}))

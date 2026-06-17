@@ -20,12 +20,19 @@ import org.jline.terminal.Terminal;
 import org.yuezhikong.Main;
 import org.yuezhikong.Server.protocol.*;
 
+import javax.net.ssl.SSLEngine;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509ExtendedTrustManager;
+import javax.net.ssl.X509TrustManager;
 import java.io.IOException;
+import java.net.Socket;
+import java.security.KeyStore;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
-import java.security.cert.X509Certificate;
 import java.util.List;
 import java.util.UUID;
 
@@ -53,8 +60,66 @@ public class ClientMain {
                     .handler(new ChannelInitializer<>() {
                         @Override
                         protected void initChannel(Channel ch) throws Exception {
+                            // 创建自定义 TrustManager，跳过主机名验证
+                            X509ExtendedTrustManager customTrustManager = new X509ExtendedTrustManager() {
+                                private final X509ExtendedTrustManager delegate;
+                                
+                                {
+                                    // 初始化默认的 TrustManager
+                                    TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+                                    tmf.init((KeyStore) null);
+                                    X509TrustManager defaultTm = (X509TrustManager) tmf.getTrustManagers()[0];
+                                    
+                                    // 获取 CA 证书并初始化
+                                    KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+                                    keyStore.load(null, null);
+                                    keyStore.setCertificateEntry("ca", ServerCACert);
+                                    
+                                    tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+                                    tmf.init(keyStore);
+                                    this.delegate = (X509ExtendedTrustManager) tmf.getTrustManagers()[0];
+                                }
+                                
+                                @Override
+                                public void checkClientTrusted(X509Certificate[] chain, String authType, Socket socket) throws CertificateException {
+                                    delegate.checkClientTrusted(chain, authType, socket);
+                                }
+                                
+                                @Override
+                                public void checkServerTrusted(X509Certificate[] chain, String authType, Socket socket) throws CertificateException {
+                                    // 跳过主机名验证，只验证证书链
+                                    delegate.checkServerTrusted(chain, authType);
+                                }
+                                
+                                @Override
+                                public void checkClientTrusted(X509Certificate[] chain, String authType, SSLEngine engine) throws CertificateException {
+                                    delegate.checkClientTrusted(chain, authType, engine);
+                                }
+                                
+                                @Override
+                                public void checkServerTrusted(X509Certificate[] chain, String authType, SSLEngine engine) throws CertificateException {
+                                    // 跳过主机名验证，只验证证书链
+                                    delegate.checkServerTrusted(chain, authType);
+                                }
+                                
+                                @Override
+                                public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+                                    delegate.checkClientTrusted(chain, authType);
+                                }
+                                
+                                @Override
+                                public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+                                    delegate.checkServerTrusted(chain, authType);
+                                }
+                                
+                                @Override
+                                public X509Certificate[] getAcceptedIssuers() {
+                                    return delegate.getAcceptedIssuers();
+                                }
+                            };
+                            
                             ch.pipeline().addLast(SslContextBuilder.forClient()
-                                    .trustManager(ServerCACert)
+                                    .trustManager(customTrustManager)
                                     .build().newHandler(ch.alloc()));
                             ch.pipeline().addLast(new LoggingHandler(LogLevel.DEBUG));// 对于每条Channel消息打印debug级别日志
                             ch.pipeline().addLast(new LineBasedFrameDecoder(Integer.MAX_VALUE));// 根据回车分割消息
