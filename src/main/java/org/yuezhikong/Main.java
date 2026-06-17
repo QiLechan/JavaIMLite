@@ -35,6 +35,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.security.NoSuchProviderException;
+import java.security.Security;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
@@ -74,6 +75,15 @@ public class Main {
         }
         terminal = terminal1;
         log.info("JavaIM初始化完成");
+        // 添加 Bouncy Castle 安全提供者
+        try {
+            org.bouncycastle.jce.provider.BouncyCastleProvider bcProvider = new org.bouncycastle.jce.provider.BouncyCastleProvider();
+            Security.addProvider(bcProvider);
+            log.info("Bouncy Castle 提供者已注册");
+        } catch (Exception e) {
+            log.error("注册 Bouncy Castle 提供者失败", e);
+            System.exit(1);
+        }
     }
 
     public static void main(String[] args) {
@@ -126,7 +136,8 @@ public class Main {
                         String password = reader.readLine("密码>");
                         System.out.print("请输入服务器CA证书路径：");
                         X509Certificate ServerCARootCert;
-                        try (FileInputStream stream = new FileInputStream(reader.readLine(">"))){
+                        Scanner scanner = new Scanner(System.in);
+                        try (FileInputStream stream = new FileInputStream(scanner.nextLine())){
                             CertificateFactory factory = CertificateFactory.getInstance("X.509","BC");
                             ServerCARootCert = (X509Certificate) factory.generateCertificate(stream);
                         } catch (CertificateException | NoSuchProviderException | IOException e) {
