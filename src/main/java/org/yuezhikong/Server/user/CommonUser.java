@@ -25,7 +25,7 @@ public abstract class CommonUser implements User {
 
     @Override
     public String getUserName() {
-        if (userInformation != null)
+        if (authentication != null)
             return authentication.getUserName();
         return "";
     }

@@ -150,8 +150,13 @@ public class Server {
     }
 
     public boolean connectUser(User user) {
+        // 如果用户名为null（未登录状态），直接添加
+        if (user.getUserName() == null || user.getUserName().isEmpty()) {
+            return users.add(user);
+        }
+        // 检查是否有重复的用户名
         for (User ForEachUser : users) {
-            if (ForEachUser.getUserName().equals(user.getUserName()))
+            if (ForEachUser.getUserName() != null && ForEachUser.getUserName().equals(user.getUserName()))
                 return false;
         }
         return users.add(user);

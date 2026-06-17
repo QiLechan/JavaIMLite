@@ -14,6 +14,7 @@ import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.util.ReferenceCountUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
 import org.jline.terminal.Terminal;
@@ -34,7 +35,10 @@ import java.io.StringWriter;
 import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Scanner;
 import java.util.UUID;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 public class ClientMain {
@@ -44,14 +48,45 @@ public class ClientMain {
     protected String UserName;
     private String Passwd;
 
+    protected ThreadFactory getWorkerThreadFactory() {
+        return new ThreadFactory() {
+            private final AtomicInteger threadNumber = new AtomicInteger(1);
+            private final ThreadGroup IOThreadGroup = new ThreadGroup(Thread.currentThread().getThreadGroup(), "IO Thread Group");
+
+            @Override
+            public Thread newThread(@NotNull Runnable r) {
+                return new Thread(IOThreadGroup,
+                        r,"Netty Worker Thread #"+threadNumber.getAndIncrement());
+            }
+        };
+    }
+
     public void start(String serverAddress, int serverPort, String userName, String password, X509Certificate ServerCACert) {
         Terminal terminal = Main.getTerminal();
         LineReader reader = LineReaderBuilder.builder().terminal(terminal).build();
 
+        Thread UserChatThread = new Thread(() -> {
+            while (true) {
+                //Scanner scanner = new Scanner(System.in);
+                String Data = reader.readLine(">");
+                ChatProtocol userInput = new ChatProtocol();
+                userInput.setMessage(Data);
+
+                GeneralProtocol generalProtocol = new GeneralProtocol();
+                generalProtocol.setProtocolData(gson.toJson(userInput));
+                generalProtocol.setProtocolVersion(protocolVersion);
+                generalProtocol.setProtocolName("ChatProtocol");
+
+                sendData(gson.toJson(generalProtocol));
+            }
+        });
+        UserChatThread.setDaemon(true);
+        UserChatThread.start();
+
         UserName = userName;
         Passwd = password;
 
-        EventLoopGroup workGroup = new NioEventLoopGroup();
+        EventLoopGroup workGroup = new NioEventLoopGroup(getWorkerThreadFactory());
 
         try {
             Bootstrap bootstrap = new Bootstrap()
