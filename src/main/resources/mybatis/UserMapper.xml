@@ -40,6 +40,6 @@
     </insert>
 
     <update id="updateUser" parameterType="org.yuezhikong.Server.user.userInformation">
-        UPDATE UserData SET ``Passwd`=#{Passwd}, `salt`=#{salt}, `userId`=#{userId} where UserName = #{UserName}
+        UPDATE UserData SET `Passwd`=#{Passwd}, `salt`=#{salt}, `userId`=#{userId} where UserName = #{UserName}
     </update>
 </mapper>
