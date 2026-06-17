@@ -1,6 +1,22 @@
 plugins {
     id 'org.jetbrains.kotlin.jvm' version '2.3.21'
     id 'com.github.johnrengelman.shadow' version '8.1.1'
+    id 'application'
+    id 'org.openjfx.javafxplugin' version '0.1.0'
+}
+
+javafx {
+    version = "21.0.2"
+    modules = ['javafx.controls']
+}
+
+application {
+    mainClass = 'org.yuezhikong.AppLauncher'
+    applicationDefaultJvmArgs = [
+        '--add-opens', 'javafx.graphics/com.sun.javafx.tk=ALL-UNNAMED',
+        '--add-opens', 'javafx.graphics/javafx.scene=ALL-UNNAMED',
+        '--add-opens', 'javafx.base/com.sun.javafx.runtime=ALL-UNNAMED'
+    ]
 }
 
 group = 'org.yuezhikong'
@@ -55,7 +71,7 @@ kotlin {
 jar {
     manifest {
         attributes(
-            'Main-Class': 'org.yuezhikong.Main',
+            'Main-Class': 'org.yuezhikong.AppLauncher',
             'Implementation-Title': 'JavaIM',
             'Implementation-Vendor': 'QiLechan',
             'Multi-Release': 'true'
@@ -69,7 +85,7 @@ shadowJar {
     archiveVersion.set('1.0-SNAPSHOT')
     manifest {
         attributes(
-            'Main-Class': 'org.yuezhikong.Main',
+            'Main-Class': 'org.yuezhikong.AppLauncher',
             'Implementation-Title': 'JavaIM',
             'Implementation-Vendor': 'QiLechan',
             'Multi-Release': 'true'

@@ -91,8 +91,14 @@ public class Main {
         LineReader reader = LineReaderBuilder.builder().terminal(terminal).build();
 
         log.info("欢迎使用JavaIm!");
-        log.info("输入 1 启动服务端，输入 2 启动客户端");
+        log.info("输入 1 启动服务端，输入 2 启动客户端，输入 3 启动图形界面(GUI)");
         int choice = Integer.parseInt(reader.readLine(">"));
+        if (choice == 3) {
+            // 启动 JavaFX GUI 模式
+            log.info("正在启动 GUI 模式...");
+            javafx.application.Application.launch(org.yuezhikong.UI.JavaFXApp.class, args);
+            return;
+        }
         if (choice == 1){
 
             log.info("正在启动服务端...");
