@@ -24,11 +24,6 @@ import org.yuezhikong.Server.Server;
 public class ConsoleUser implements User {
 
     public ConsoleUser() {
-        try {
-            Class.forName(new Throwable().getStackTrace()[1].getClassName()).asSubclass(Server.class);
-        } catch (ClassCastException | ClassNotFoundException e) {
-            throw new UnsupportedOperationException("only Server can create Console User!");
-        }
     }
 
     @Override

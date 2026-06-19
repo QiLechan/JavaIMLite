@@ -341,7 +341,7 @@ public class NetworkServer {
 
         public void disconnect() {
             if (isOnline())
-                channel.disconnect();
+                channel.close();  // 使用close()而不是disconnect()，确保触发channelInactive回调
         }
     }
 
