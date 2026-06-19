@@ -37,6 +37,7 @@ import org.yuezhikong.Server.protocolHandler.ProtocolHandler;
 import org.yuezhikong.Server.protocolHandler.handlers.ChatProHandler;
 import org.yuezhikong.Server.protocolHandler.handlers.LoginProHandler;
 import org.yuezhikong.Server.protocolHandler.handlers.SystemProHandler;
+import org.yuezhikong.Server.request.ChatRequest;
 import org.yuezhikong.Server.user.User;
 import org.yuezhikong.Server.user.UserAuthentication;
 import org.yuezhikong.SystemConfig;
@@ -67,6 +68,9 @@ public class Server {
     private NetworkServer networkServer;
 
     @Getter
+    private ChatRequest request;
+
+    @Getter
     private final ThreadGroup serverThreadGroup = Thread.currentThread().getThreadGroup();
 
     private final Map<String, ProtocolHandler> protocolHandlerMap = new ConcurrentHashMap<>();
@@ -90,6 +94,8 @@ public class Server {
         networkServer =  new NetworkServer();
         log.info("正在启动JavaIM");
         Instance = this;
+        // 初始化指令系统
+        request = new ChatRequest();
         // 创建线程池
         ExecutorService ThreadPool = Executors.newCachedThreadPool();
         serverAPI = new ServerAPI(this) ;
@@ -127,7 +133,14 @@ public class Server {
                         String line = reader.readLine(">").trim();
                         if (line.isEmpty())
                             continue;
-                        if (!line.startsWith("/")) {
+                        if (line.startsWith("/")) {
+                            // 处理指令
+                            String[] tmp = line.split("\\s+");
+                            String command = tmp[0].substring(1);
+                            String[] args = new String[tmp.length - 1];
+                            System.arraycopy(tmp, 1, args, 0, tmp.length - 1);
+                            request.commandRequest(command, args, new org.yuezhikong.Server.user.ConsoleUser());
+                        } else {
                             // 聊天消息
                             log.info("[Server]: {}", line);
                             ChatProtocol chatProtocol = new ChatProtocol();
@@ -217,4 +230,5 @@ public class Server {
         ProtocolHandler handler = protocolHandlerMap.get(protocol.getProtocolName());
         handler.handleProtocol(this, protocol.getProtocolData(), user);
     }
+
 }
