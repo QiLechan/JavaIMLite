@@ -42,8 +42,10 @@ import javax.net.ssl.SSLEngine;
 import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509ExtendedTrustManager;
 import javax.net.ssl.X509TrustManager;
+import java.io.File;
 import java.io.IOException;
 import java.net.Socket;
+import java.nio.file.Files;
 import java.security.KeyStore;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
@@ -51,6 +53,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 import java.util.Scanner;
 import java.util.UUID;
@@ -86,6 +89,19 @@ public class ClientMain {
             while (true) {
                 //Scanner scanner = new Scanner(System.in);
                 String Data = reader.readLine(">");
+                
+                // 检查是否为文件上传指令
+                if (Data.startsWith("/upload")) {
+                    handleUploadCommand(Data);
+                    continue;
+                }
+                
+                // 检查是否为接受/拒绝文件传输指令
+                if (Data.startsWith("/y ") || Data.startsWith("/n ")) {
+                    handleFileTransferResponse(Data);
+                    continue;
+                }
+                
                 ChatProtocol userInput = new ChatProtocol();
                 userInput.setMessage(Data);
 
@@ -321,9 +337,36 @@ public class ClientMain {
                                     errorPrintf("服务端发送的文件: %s 中存在非法字符，自动重命名为%s", fileName, randomName);
                                     fileName = randomName;
                                 }
-                                //byte[] content = decodeBase64(bodyBeans.get(1).getData());
+                                String base64Content = bodyBeans.get(1).getData();
+                                byte[] content = Base64.getDecoder().decode(base64Content);
 
-                                //writeDownloadFile(fileName, content);
+                                // 创建downloads目录
+                                File downloadDir = new File("./downloads/");
+                                if (!downloadDir.exists()) {
+                                    downloadDir.mkdirs();
+                                }
+                                
+                                // 保存文件
+                                File destFile = new File(downloadDir, fileName);
+                                Files.write(destFile.toPath(), content);
+                                normalPrintf("文件已保存: %s (%d bytes)%n", destFile.getAbsolutePath(), content.length);
+                                break;
+                            }
+                            
+                            case "upload_request" : {
+                                // 处理文件上传请求
+                                List<TransferProtocol.TransferProtocolBodyBean> bodyBeans = transferProtocol.getTransferProtocolBody();
+                                String fileName = bodyBeans.get(0).getData();
+                                String fileSize = bodyBeans.get(1).getData();
+                                String requestId = bodyBeans.get(2).getData();
+                                String sender = bodyBeans.get(3).getData();
+                                
+                                normalPrintf("%n[文件传输请求]%n");
+                                normalPrintf("发送者: %s%n", sender);
+                                normalPrintf("文件名: %s%n", fileName);
+                                normalPrintf("文件大小: %s bytes%n", fileSize);
+                                normalPrintf("请求ID: %s%n", requestId);
+                                normalPrintf("输入 /y %s 接受文件，输入 /n %s 拒绝文件%n", requestId, requestId);
                                 break;
                             }
 
@@ -369,5 +412,75 @@ public class ClientMain {
 
     protected void errorPrintf(String data, Object... args) {
         System.err.printf(data,args);
+    }
+    
+    /**
+     * 处理客户端的文件上传指令
+     */
+    private void handleUploadCommand(String command) {
+        String[] parts = command.split("\\s+", 2);
+        if (parts.length < 2) {
+            normalPrint("语法错误! 正确的语法为：/upload <文件路径>");
+            return;
+        }
+        
+        String filePath = parts[1];
+        File file = new File(filePath);
+        
+        // 检查文件是否存在
+        if (!file.exists()) {
+            normalPrint("文件不存在: " + filePath);
+            return;
+        }
+        
+        // 检查是否是文件
+        if (!file.isFile()) {
+            normalPrint("路径不是一个文件: " + filePath);
+            return;
+        }
+        
+        // 检查文件大小（限制为10MB）
+        long fileSize = file.length();
+        long maxSize = 10 * 1024 * 1024; // 10MB
+        if (fileSize > maxSize) {
+            normalPrint("文件太大，最大支持10MB");
+            return;
+        }
+        
+        try {
+            // 读取文件内容并编码为Base64
+            byte[] fileContent = Files.readAllBytes(file.toPath());
+            String base64Content = Base64.getEncoder().encodeToString(fileContent);
+            
+            // 发送文件到服务器（使用ChatProtocol发送指令）
+            ChatProtocol chatProtocol = new ChatProtocol();
+            chatProtocol.setMessage(command); // 发送/upload指令
+            
+            GeneralProtocol generalProtocol = new GeneralProtocol();
+            generalProtocol.setProtocolData(gson.toJson(chatProtocol));
+            generalProtocol.setProtocolVersion(protocolVersion);
+            generalProtocol.setProtocolName("ChatProtocol");
+            
+            sendData(gson.toJson(generalProtocol));
+            
+        } catch (Exception e) {
+            errorPrint("文件上传失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 处理文件传输响应（接受/拒绝）
+     */
+    private void handleFileTransferResponse(String command) {
+        // 直接发送指令到服务器
+        ChatProtocol chatProtocol = new ChatProtocol();
+        chatProtocol.setMessage(command);
+        
+        GeneralProtocol generalProtocol = new GeneralProtocol();
+        generalProtocol.setProtocolData(gson.toJson(chatProtocol));
+        generalProtocol.setProtocolVersion(protocolVersion);
+        generalProtocol.setProtocolName("ChatProtocol");
+        
+        sendData(gson.toJson(generalProtocol));
     }
 }

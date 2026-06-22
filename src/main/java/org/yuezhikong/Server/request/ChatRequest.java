@@ -50,6 +50,9 @@ public class ChatRequest {
         registerCommand0(new CommandInformation(new Commands.QuitCommand(), "quit"));
         registerCommand0(new CommandInformation(new Commands.ChangePasswordCommand(), "change-password"));
         registerCommand0(new CommandInformation(new Commands.KickCommand(), "kick"));
+        registerCommand0(new CommandInformation(new org.yuezhikong.Server.command.UploadCommand(), "upload"));
+        registerCommand0(new CommandInformation(new org.yuezhikong.Server.command.AcceptFileCommand(), "y"));
+        registerCommand0(new CommandInformation(new org.yuezhikong.Server.command.RejectFileCommand(), "n"));
     }
 
     /**
