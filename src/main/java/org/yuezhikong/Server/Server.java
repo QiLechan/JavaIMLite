@@ -33,10 +33,12 @@ import org.yuezhikong.Server.network.NetworkServer;
 import org.yuezhikong.Server.protocol.ChatProtocol;
 import org.yuezhikong.Server.protocol.GeneralProtocol;
 import org.yuezhikong.Server.protocol.SystemProtocol;
+import org.yuezhikong.Server.filetransfer.FileTransferRequestHandler;
 import org.yuezhikong.Server.protocolHandler.ProtocolHandler;
 import org.yuezhikong.Server.protocolHandler.handlers.ChatProHandler;
 import org.yuezhikong.Server.protocolHandler.handlers.LoginProHandler;
 import org.yuezhikong.Server.protocolHandler.handlers.SystemProHandler;
+import org.yuezhikong.Server.protocolHandler.handlers.TransferProHandler;
 import org.yuezhikong.Server.request.ChatRequest;
 import org.yuezhikong.Server.user.User;
 import org.yuezhikong.Server.user.UserAuthentication;
@@ -81,6 +83,8 @@ public class Server {
      */
     private boolean guiMode = false;
 
+    private ScheduledExecutorService fileCleanupExecutor;
+
     /**
      * 设置 GUI 模式。必须在调用 {@link #start(int)} 之前设置。
      *
@@ -100,7 +104,6 @@ public class Server {
         ExecutorService ThreadPool = Executors.newCachedThreadPool();
         serverAPI = new ServerAPI(this) ;
 
-        new Thread(() -> {
             Future<?> DatabaseStartTask = ThreadPool.submit(() -> {
                 log.info("正在启动数据库");
                 String JDBCUrl;
@@ -115,7 +118,7 @@ public class Server {
                     } catch (NullPointerException ignored) {
                     }
                     log.info("JavaIM服务器已经关闭");
-                    return;
+                    throw new RuntimeException(throwable);
                 }
                 sqlSession = DatabaseHelper.InitMybatis(JDBCUrl);
                 log.info("数据库启动完成");
@@ -123,6 +126,8 @@ public class Server {
             protocolHandlerMap.put("ChatProtocol", new ChatProHandler());
             protocolHandlerMap.put("LoginProtocol", new LoginProHandler());
             protocolHandlerMap.put("SystemProtocol", new SystemProHandler());
+            protocolHandlerMap.put("TransferProtocol", new TransferProHandler());
+            startFileCleanupTask();
             // GUI 模式下不启动控制台输入线程，避免 JLine 在无终端环境下报错
             if (!guiMode) {
             Thread ConsoleUserRequestThread = new Thread(() -> {
@@ -171,9 +176,8 @@ public class Server {
             } catch (InterruptedException | ExecutionException e) {
                 throw new RuntimeException("Thread Pool Fatal", e);
             }
-            ThreadPool.shutdownNow();
-        }).start();
-        networkServer.start(ThreadPool, serverPort);
+            networkServer.start(ThreadPool, serverPort);
+            ThreadPool.shutdown();
     }
 
     public void disconnectUser(User user) {
@@ -200,6 +204,7 @@ public class Server {
         System.gc();
         networkServer.stop();
         Instance = null;
+        stopFileCleanupTask();
         sqlSession.close();
         try {
             ExitWatchdog.getInstance().onExit();
@@ -220,6 +225,13 @@ public class Server {
             serverAPI.sendJsonToClient(user, gson.toJson(systemProtocol), "SystemProtocol");
             return;
         }
+        if (protocol == null) {
+            SystemProtocol systemProtocol = new SystemProtocol();
+            systemProtocol.setType("Error");
+            systemProtocol.setMessage("Invalid Packet");
+            serverAPI.sendJsonToClient(user, gson.toJson(systemProtocol), "SystemProtocol");
+            return;
+        }
         if (protocol.getProtocolVersion() != SystemConfig.getProtocolVersion()) {
             SystemProtocol systemProtocol = new SystemProtocol();
             systemProtocol.setType("Error");
@@ -228,7 +240,45 @@ public class Server {
             return;
         }
         ProtocolHandler handler = protocolHandlerMap.get(protocol.getProtocolName());
-        handler.handleProtocol(this, protocol.getProtocolData(), user);
+        if (handler == null) {
+            SystemProtocol systemProtocol = new SystemProtocol();
+            systemProtocol.setType("Error");
+            systemProtocol.setMessage("Protocol not support");
+            serverAPI.sendJsonToClient(user, gson.toJson(systemProtocol), "SystemProtocol");
+            return;
+        }
+        try {
+            handler.handleProtocol(this, protocol.getProtocolData(), user);
+        } catch (RuntimeException e) {
+            log.error("Protocol handler failed", e);
+            SystemProtocol systemProtocol = new SystemProtocol();
+            systemProtocol.setType("Error");
+            systemProtocol.setMessage("Protocol handling failed");
+            serverAPI.sendJsonToClient(user, gson.toJson(systemProtocol), "SystemProtocol");
+        }
+    }
+
+    private void startFileCleanupTask() {
+        fileCleanupExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread thread = new Thread(r, "FileTransferCleanupThread");
+            thread.setDaemon(true);
+            return thread;
+        });
+        fileCleanupExecutor.scheduleAtFixedRate(() -> {
+            try {
+                FileTransferRequestHandler.getInstance().cleanupExpiredRequests();
+            } catch (Throwable throwable) {
+                log.warn("File transfer cleanup failed", throwable);
+            }
+        }, 1, 1, TimeUnit.MINUTES);
+    }
+
+    private void stopFileCleanupTask() {
+        if (fileCleanupExecutor != null) {
+            fileCleanupExecutor.shutdownNow();
+            fileCleanupExecutor = null;
+        }
+        FileTransferRequestHandler.getInstance().cleanupAllRequests();
     }
 
 }

@@ -43,7 +43,7 @@ public class LoginProHandler implements ProtocolHandler {
             return;
         }
         LoginProtocol loginProtocol = server.getGson().fromJson(protocolData, LoginProtocol.class);// 反序列化 json 到 object
-        if (loginProtocol.getLoginPacketHead() == null || loginProtocol.getLoginPacketBody() == null) {
+        if (loginProtocol == null || loginProtocol.getLoginPacketHead() == null || loginProtocol.getLoginPacketBody() == null) {
             SystemProtocol systemProtocol = new SystemProtocol();
             systemProtocol.setType("Error");
             systemProtocol.setMessage("Invalid Packet");
@@ -51,6 +51,13 @@ public class LoginProHandler implements ProtocolHandler {
             return;
         }
         if ("passwd".equals(loginProtocol.getLoginPacketHead().getType())) {
+            if (loginProtocol.getLoginPacketBody().getNormalLogin() == null) {
+                SystemProtocol systemProtocol = new SystemProtocol();
+                systemProtocol.setType("Error");
+                systemProtocol.setMessage("Invalid Packet");
+                server.getServerAPI().sendJsonToClient(user, server.getGson().toJson(systemProtocol), "SystemProtocol");
+                return;
+            }
             if (loginProtocol.getLoginPacketBody().getNormalLogin().getUserName() == null ||
                     loginProtocol.getLoginPacketBody().getNormalLogin().getUserName().contains("\n") ||
                     loginProtocol.getLoginPacketBody().getNormalLogin().getUserName().contains("\r")) {

@@ -25,8 +25,8 @@ import org.yuezhikong.Server.protocol.TransferProtocol;
 import org.yuezhikong.Server.user.User;
 
 import java.io.File;
-import java.util.Base64;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 文件上传命令
@@ -69,11 +69,16 @@ public class UploadCommand implements Command {
         try {
             // 读取文件内容并编码为Base64
             byte[] fileContent = java.nio.file.Files.readAllBytes(file.toPath());
-            String base64Content = Base64.getEncoder().encodeToString(fileContent);
+            File uploadDirectory = new File("./uploads/");
+            if (!uploadDirectory.exists() && !uploadDirectory.mkdirs()) {
+                throw new IllegalStateException("Failed to create uploads directory");
+            }
+            String storedFileName = UUID.randomUUID() + "_" + file.getName();
+            java.nio.file.Files.write(new File(uploadDirectory, storedFileName).toPath(), fileContent);
             
             // 创建文件传输请求
             FileTransferRequestHandler handler = FileTransferRequestHandler.getInstance();
-            String requestId = handler.createRequest(file.getName(), fileSize, user);
+            String requestId = handler.createRequest(file.getName(), storedFileName, fileSize, user);
             
             // 构建TransferProtocol广播给所有用户
             TransferProtocol transferProtocol = new TransferProtocol();

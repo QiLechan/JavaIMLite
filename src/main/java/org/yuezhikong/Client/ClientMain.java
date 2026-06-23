@@ -417,7 +417,7 @@ public class ClientMain {
     /**
      * 处理客户端的文件上传指令
      */
-    private void handleUploadCommand(String command) {
+    protected void handleUploadCommand(String command) {
         String[] parts = command.split("\\s+", 2);
         if (parts.length < 2) {
             normalPrint("语法错误! 正确的语法为：/upload <文件路径>");
@@ -453,13 +453,21 @@ public class ClientMain {
             String base64Content = Base64.getEncoder().encodeToString(fileContent);
             
             // 发送文件到服务器（使用ChatProtocol发送指令）
-            ChatProtocol chatProtocol = new ChatProtocol();
-            chatProtocol.setMessage(command); // 发送/upload指令
+            TransferProtocol transferProtocol = new TransferProtocol();
+            TransferProtocol.TransferProtocolHeadBean headBean = new TransferProtocol.TransferProtocolHeadBean();
+            headBean.setType("upload");
+            transferProtocol.setTransferProtocolHead(headBean);
+
+            TransferProtocol.TransferProtocolBodyBean fileNameBean = new TransferProtocol.TransferProtocolBodyBean();
+            fileNameBean.setData(file.getName());
+            TransferProtocol.TransferProtocolBodyBean contentBean = new TransferProtocol.TransferProtocolBodyBean();
+            contentBean.setData(base64Content);
+            transferProtocol.setTransferProtocolBody(List.of(fileNameBean, contentBean));
             
             GeneralProtocol generalProtocol = new GeneralProtocol();
-            generalProtocol.setProtocolData(gson.toJson(chatProtocol));
+            generalProtocol.setProtocolData(gson.toJson(transferProtocol));
             generalProtocol.setProtocolVersion(protocolVersion);
-            generalProtocol.setProtocolName("ChatProtocol");
+            generalProtocol.setProtocolName("TransferProtocol");
             
             sendData(gson.toJson(generalProtocol));
             
@@ -471,7 +479,7 @@ public class ClientMain {
     /**
      * 处理文件传输响应（接受/拒绝）
      */
-    private void handleFileTransferResponse(String command) {
+    protected void handleFileTransferResponse(String command) {
         // 直接发送指令到服务器
         ChatProtocol chatProtocol = new ChatProtocol();
         chatProtocol.setMessage(command);

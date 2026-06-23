@@ -276,6 +276,20 @@ public class ClientUI extends ClientMain {
         String text = messageField.getText().trim();
         if (text.isEmpty()) return;
 
+        // 检查是否为文件上传指令
+        if (text.startsWith("/upload")) {
+            handleUploadCommand(text);
+            messageField.clear();
+            return;
+        }
+
+        // 检查是否为接受/拒绝文件传输指令
+        if (text.startsWith("/y ") || text.startsWith("/n ")) {
+            handleFileTransferResponse(text);
+            messageField.clear();
+            return;
+        }
+
         ChatProtocol chatProtocol = new ChatProtocol();
         chatProtocol.setSourceUserName(UserName);
         chatProtocol.setMessage(text);
